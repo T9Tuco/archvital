@@ -25,19 +25,19 @@ Most system monitors drift into one of two extremes:
 ## Screenshots
 
 ### Main Window
-![Main Window](how%20it%20looks/2026-04-19-224810_1914x1068_scrot.png)
+<img src="how it looks/2026-04-19-224810_1914x1068_scrot.png" alt="Main Window" width="600">
 
 ### CPU Section
-![CPU Section](how%20it%20looks/2026-04-19-224818_1914x1074_scrot.png)
+<img src="how it looks/2026-04-19-224818_1914x1074_scrot.png" alt="CPU Section" width="600">
 
 ### Memory Section
-![Memory Section](how%20it%20looks/2026-04-19-224829_1912x1079_scrot.png)
+<img src="how it looks/2026-04-19-224829_1912x1079_scrot.png" alt="Memory Section" width="600">
 
 ### Task Section
-![Disk Section](how%20it%20looks/2026-04-19-224907_1912x1037_scrot.png)
+<img src="how it looks/2026-04-19-224907_1912x1037_scrot.png" alt="Disk Section" width="600">
 
 ### Settings Section
-![Network Section](how%20it%20looks/2026-04-19-224916_1898x1027_scrot.png)
+<img src="how it looks/2026-04-19-224916_1898x1027_scrot.png" alt="Network Section" width="600">
 
 ## Quick Start
 
