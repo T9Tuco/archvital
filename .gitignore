@@ -1,0 +1,28 @@
+# build output
+/build/
+
+# cmake
+CMakeUserPresets.json
+CMakeCache.txt
+cmake_install.cmake
+compile_commands.json
+Makefile
+
+# local editor / tool noise
+.codex
+.claude/
+.vscode/
+.idea/
+
+# temp files
+*.swp
+*.swo
+*~
+*.tmp
+*.temp
+
+# binaries / logs
+*.log
+*.out
+*.o
+*.obj

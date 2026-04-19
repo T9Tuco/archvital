@@ -49,47 +49,47 @@ private:
         long long txBytes{0};
     };
 
-    // CPU state
+    // last cpu snapshot, needed so usage can be calculated as a delta
     QVector<RawCpuStat> m_prevCpuStats;
 
-    // Process state
+    // previous process timing for per-process cpu %
     QHash<int, ProcTimes> m_prevProcTimes;
     long long m_prevPollNs{0};
     long long m_clkTck{100};
 
-    // Disk I/O state
+    // previous disk counters for bytes/sec math
     QHash<QString, DiskIOState> m_prevDiskIO;
     long long m_prevDiskNs{0};
 
-    // Network state
+    // previous network counters for speed math
     QHash<QString, NetState> m_prevNetStats;
     long long m_prevNetNs{0};
 
-    // History (managed in worker, included in emitted structs)
+    // short histories that feed the little graphs
     QVector<double> m_cpuHistory;
     QVector<double> m_memHistory;
     QHash<QString, QVector<double>> m_netDownHistory;
     QHash<QString, QVector<double>> m_netUpHistory;
 
-    // Cached static info
+    // static machine info we only need to discover once
     bool m_cpuInfoCached{false};
     QString m_cpuModel;
     QString m_cpuArch;
     int m_physCores{0};
     int m_logCores{0};
 
-    // GPU detection
+    // gpu detection result cache
     bool m_gpuSearchDone{false};
     QString m_gpuHwmonPath;
     QString m_gpuDriver;
     QString m_gpuDrmPath;
     bool m_gpuNvidiaSmi{false};
 
-    // IP address cache
+    // iface -> ip cache so we do not shell out every poll
     QHash<QString, QString> m_ifaceIPs;
     long long m_lastIPRefreshNs{0};
 
-    // UID -> username cache
+    // uid lookup cache, because repeating getpwuid all day is silly
     QHash<int, QString> m_uidCache;
 
     void readCpuData();

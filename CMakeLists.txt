@@ -25,6 +25,7 @@ set(SOURCES
     src/sections/networksection.cpp
     src/sections/tasksection.cpp
     src/sections/diagnosticssection.cpp
+    src/sections/settingssection.cpp
 )
 
 add_executable(archvital ${SOURCES})

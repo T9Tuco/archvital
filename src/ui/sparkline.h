@@ -3,6 +3,7 @@
 #include <QWidget>
 #include <QVector>
 #include <QColor>
+#include "stylesheet.h"
 
 class SparklineWidget : public QWidget {
     Q_OBJECT
@@ -23,7 +24,9 @@ protected:
 
 private:
     QVector<double> m_values;
-    QColor          m_color{0x00, 0xe5, 0xff};
+    QColor          m_color{Style::accentColor()};
     double          m_fixedMax{100.0};
     int             m_fillAlpha{40};
+    int             m_paddingX{2};
+    int             m_paddingY{2};
 };

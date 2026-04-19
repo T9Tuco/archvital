@@ -17,7 +17,7 @@
 #include <algorithm>
 #include <cstring>
 
-// ── helpers ──────────────────────────────────────────────────────────────────
+// little file helpers so the rest of the worker stays readable
 
 QString SystemMonitorWorker::readFile(const QString& path) {
     QFile f(path);
@@ -50,7 +50,7 @@ QString SystemMonitorWorker::uidToUsername(int uid) {
     return name;
 }
 
-// ── init ─────────────────────────────────────────────────────────────────────
+// one-time setup stuff lives here
 
 SystemMonitorWorker::SystemMonitorWorker(QObject* parent) : QObject(parent) {
     m_clkTck = sysconf(_SC_CLK_TCK);
@@ -58,13 +58,13 @@ SystemMonitorWorker::SystemMonitorWorker(QObject* parent) : QObject(parent) {
 }
 
 void SystemMonitorWorker::initialize() {
-    // Cache static CPU info
+    // grab the boring static CPU facts once so we do not keep re-reading them
     QFile cpuinfo("/proc/cpuinfo");
     if (cpuinfo.open(QIODevice::ReadOnly | QIODevice::Text)) {
         QTextStream s(&cpuinfo);
         QSet<int> physIds;
-        while (!s.atEnd()) {
-            const QString line = s.readLine();
+        QString line;
+        while (s.readLineInto(&line)) {
             const auto idx = line.indexOf(':');
             if (idx < 0) continue;
             const QString key = line.left(idx).trimmed();
@@ -78,19 +78,18 @@ void SystemMonitorWorker::initialize() {
             if (key == "physical id")
                 physIds.insert(val.toInt());
         }
-        // If architecture not in cpuinfo, use uname
+        // some systems do not spell out the arch here, so uname gets the job
         if (m_cpuArch.isEmpty()) {
             struct utsname u{};
             uname(&u);
             m_cpuArch = QString::fromLocal8Bit(u.machine);
         }
-        // Count physical cores via "cpu cores" field
+        // physical core count is a bit messy, so we piece it together here
         cpuinfo.seek(0);
         QTextStream s2(&cpuinfo);
         QHash<int, int> coreCounts;
         int currentPhysId = 0;
-        while (!s2.atEnd()) {
-            const QString line = s2.readLine();
+        while (s2.readLineInto(&line)) {
             const auto idx = line.indexOf(':');
             if (idx < 0) continue;
             const QString key = line.left(idx).trimmed();
@@ -106,7 +105,7 @@ void SystemMonitorWorker::initialize() {
     refreshIPAddresses();
 }
 
-// ── GPU detection ─────────────────────────────────────────────────────────────
+// quick GPU detective work
 
 void SystemMonitorWorker::detectGpu() {
     m_gpuSearchDone = true;
@@ -121,7 +120,7 @@ void SystemMonitorWorker::detectGpu() {
             break;
         }
     }
-    // If hwmon not found, try nvidia-smi
+    // if hwmon comes up empty, give nvidia-smi a shot
     if (m_gpuHwmonPath.isEmpty()) {
         QProcess p;
         p.start("nvidia-smi", {"--query-gpu=name", "--format=csv,noheader"});
@@ -131,7 +130,7 @@ void SystemMonitorWorker::detectGpu() {
             m_gpuDriver = "nvidia-smi";
         }
     }
-    // Locate DRM path for VRAM (amdgpu)
+    // amdgpu keeps VRAM numbers off in the DRM corner
     if (m_gpuDriver == "amdgpu") {
         const QDir drmDir("/sys/class/drm");
         const auto cards = drmDir.entryList(QStringList{"card*"}, QDir::Dirs);
@@ -147,7 +146,7 @@ void SystemMonitorWorker::detectGpu() {
     }
 }
 
-// ── poll entry point ──────────────────────────────────────────────────────────
+// one poll, all sections fed
 
 void SystemMonitorWorker::poll() {
     readCpuData();
@@ -158,13 +157,13 @@ void SystemMonitorWorker::poll() {
     readProcessData();
     readSystemInfo();
 
-    // Refresh IPs every ~30 s
+    // network addresses rarely change every tick, so we only refresh sometimes
     if (monoNs() - m_lastIPRefreshNs > 30'000'000'000LL) {
         refreshIPAddresses();
     }
 }
 
-// ── CPU ───────────────────────────────────────────────────────────────────────
+// CPU numbers
 
 SystemMonitorWorker::RawCpuStat
 SystemMonitorWorker::parseCpuStatLine(const QStringList& p) {
@@ -186,8 +185,8 @@ void SystemMonitorWorker::readCpuData() {
 
     QVector<RawCpuStat> newStats;
     QTextStream ts(&f);
-    while (!ts.atEnd()) {
-        const QString line = ts.readLine();
+    QString line;
+    while (ts.readLineInto(&line)) {
         if (!line.startsWith("cpu")) break;
         const QStringList parts = line.split(' ', Qt::SkipEmptyParts);
         newStats.append(parseCpuStatLine(parts));
@@ -199,8 +198,14 @@ void SystemMonitorWorker::readCpuData() {
     data.physicalCores = m_physCores;
     data.logicalCores  = m_logCores > 0 ? m_logCores : (newStats.size() > 1 ? newStats.size() - 1 : 1);
 
+    if (m_prevCpuStats.isEmpty()) {
+        // first sample is just the baseline, otherwise usage math lies to us
+        m_prevCpuStats = newStats;
+        return;
+    }
+
     if (m_prevCpuStats.size() == newStats.size() && !newStats.isEmpty()) {
-        // Index 0 = aggregate, 1+ = per-core
+        // slot 0 is the whole CPU, everything after that is a real core row
         for (int i = 0; i < newStats.size(); i++) {
             const auto& cur  = newStats[i];
             const auto& prev = m_prevCpuStats[i];
@@ -221,17 +226,9 @@ void SystemMonitorWorker::readCpuData() {
                 data.cores.append(cd);
             }
         }
-    } else if (!newStats.isEmpty()) {
-        int ncores = newStats.size() - 1;
-        if (ncores < 1) ncores = 1;
-        for (int i = 0; i < ncores; i++) {
-            CpuCoreData cd;
-            cd.coreId = i;
-            data.cores.append(cd);
-        }
     }
 
-    // CPU temperatures via hwmon coretemp / k10temp
+    // temps come from hwmon, assuming the kernel is in a helpful mood
     {
         const QDir hwmon("/sys/class/hwmon");
         const auto entries = hwmon.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
@@ -239,7 +236,7 @@ void SystemMonitorWorker::readCpuData() {
             const QString base = "/sys/class/hwmon/" + e;
             const QString name = readFile(base + "/name");
             if (name != "coretemp" && name != "k10temp") continue;
-            // Read package temp
+            // package temp is the easy one, if the sensor labels behave
             for (int ti = 1; ti <= 20; ti++) {
                 const QString lbl = readFile(
                     QString("%1/temp%2_label").arg(base).arg(ti));
@@ -251,7 +248,7 @@ void SystemMonitorWorker::readCpuData() {
                     if (raw > 0) { data.packageTemp = raw / 1000.0; break; }
                 }
             }
-            // Per-core temps
+            // core temps are optional, so missing values are not a disaster
             for (int ti = 1; ti <= 40; ti++) {
                 const QString lbl = readFile(
                     QString("%1/temp%2_label").arg(base).arg(ti));
@@ -268,7 +265,7 @@ void SystemMonitorWorker::readCpuData() {
         }
     }
 
-    // Load averages
+    // classic load average trio from /proc/loadavg
     {
         const QString la = readFile("/proc/loadavg");
         const QStringList lp = la.split(' ', Qt::SkipEmptyParts);
@@ -286,16 +283,20 @@ void SystemMonitorWorker::readCpuData() {
     emit cpuDataReady(data);
 }
 
-// ── Memory ────────────────────────────────────────────────────────────────────
+// memory numbers are a little opinionated on Linux, so we try to be fair
 
 void SystemMonitorWorker::readMemoryData() {
     QFile f("/proc/meminfo");
     if (!f.open(QIODevice::ReadOnly | QIODevice::Text)) return;
 
     MemoryData data;
+    long long cachedKB = 0;
+    long long sReclaimableKB = 0;
+    long long shmemKB = 0;
+    long long swapFreeKB = 0;
     QTextStream ts(&f);
-    while (!ts.atEnd()) {
-        const QString line = ts.readLine();
+    QString line;
+    while (ts.readLineInto(&line)) {
         const auto c = line.indexOf(':');
         if (c < 0) continue;
         const QString key = line.left(c).trimmed();
@@ -306,21 +307,36 @@ void SystemMonitorWorker::readMemoryData() {
         else if (key == "MemFree")      data.freeKB      = val;
         else if (key == "MemAvailable") data.availableKB = val;
         else if (key == "Buffers")      data.buffersKB   = val;
-        else if (key == "Cached")       data.cachedKB    = val;
+        else if (key == "Cached")       cachedKB         = val;
+        else if (key == "SReclaimable") sReclaimableKB   = val;
+        else if (key == "Shmem")        shmemKB          = val;
         else if (key == "SwapTotal")    data.swapTotalKB = val;
-        else if (key == "SwapFree")     { data.swapUsedKB = data.swapTotalKB - val; }
+        else if (key == "SwapFree")     swapFreeKB       = val;
     }
-    long long buffCache = data.buffersKB + data.cachedKB;
-    data.usedKB = data.totalKB - data.freeKB - buffCache;
-    if (data.totalKB > 0)
-        data.usagePercent = 100.0 * data.usedKB / data.totalKB;
+
+    // "buff/cache" is closer to what tools like free show when we subtract shmem again
+    data.cachedKB = std::max(0LL, cachedKB + sReclaimableKB - shmemKB);
+
+    // MemAvailable is the sane source for "used" on modern Linux.
+    if (data.availableKB > 0) {
+        data.usedKB = std::clamp(data.totalKB - data.availableKB, 0LL, data.totalKB);
+    } else {
+        const long long buffCacheKB = data.buffersKB + data.cachedKB;
+        data.usedKB = std::clamp(data.totalKB - data.freeKB - buffCacheKB, 0LL, data.totalKB);
+    }
+
+    data.swapUsedKB = std::max(0LL, data.swapTotalKB - swapFreeKB);
+
+    if (data.totalKB > 0) {
+        data.usagePercent = std::clamp(100.0 * data.usedKB / data.totalKB, 0.0, 100.0);
+    }
 
     pushHistory(m_memHistory, data.usagePercent);
     data.usageHistory = m_memHistory;
     emit memoryDataReady(data);
 }
 
-// ── GPU ───────────────────────────────────────────────────────────────────────
+// GPU numbers, with a few different fallback paths
 
 void SystemMonitorWorker::readGpuData() {
     GpuData data;
@@ -368,12 +384,12 @@ void SystemMonitorWorker::readGpuData() {
                 if (vu >= 0) data.vramUsedMB  = vu / (1024 * 1024);
             }
         } else {
-            // i915 / generic hwmon
+            // generic hwmon path, not fancy but better than nothing
             data.tempEdge = rdTemp(1);
         }
 
     } else if (m_gpuNvidiaSmi) {
-        // Query nvidia-smi
+        // nvidia-smi is slower, but at least it usually tells the truth
         QProcess p;
         p.start("nvidia-smi", {
             "--query-gpu=temperature.gpu,fan.speed,power.draw,power.limit,"
@@ -401,7 +417,7 @@ void SystemMonitorWorker::readGpuData() {
     emit gpuDataReady(data);
 }
 
-// ── Disks ─────────────────────────────────────────────────────────────────────
+// disk usage and io stats
 
 void SystemMonitorWorker::readDiskData() {
     static const QStringList SKIP_FS = {
@@ -416,8 +432,9 @@ void SystemMonitorWorker::readDiskData() {
     QFile mounts("/proc/mounts");
     if (mounts.open(QIODevice::ReadOnly | QIODevice::Text)) {
         QTextStream ts(&mounts);
-        while (!ts.atEnd()) {
-            const QStringList p = ts.readLine().split(' ', Qt::SkipEmptyParts);
+        QString line;
+        while (ts.readLineInto(&line)) {
+            const QStringList p = line.split(' ', Qt::SkipEmptyParts);
             if (p.size() < 3) continue;
             if (SKIP_FS.contains(p[2])) continue;
             const QString mp = p[1];
@@ -436,7 +453,7 @@ void SystemMonitorWorker::readDiskData() {
         }
     }
 
-    // I/O rates from /proc/diskstats
+    // io rates come from /proc/diskstats, sector math included
     QVector<DiskDeviceData> devices;
     QSet<QString> baseDevs;
     {
@@ -454,8 +471,9 @@ void SystemMonitorWorker::readDiskData() {
     QFile dsf("/proc/diskstats");
     if (dsf.open(QIODevice::ReadOnly | QIODevice::Text)) {
         QTextStream ts(&dsf);
-        while (!ts.atEnd()) {
-            const QStringList p = ts.readLine().split(' ', Qt::SkipEmptyParts);
+        QString line;
+        while (ts.readLineInto(&line)) {
+            const QStringList p = line.split(' ', Qt::SkipEmptyParts);
             if (p.size() < 11) continue;
             const QString name = p[2];
             if (!baseDevs.contains(name)) continue;
@@ -475,14 +493,14 @@ void SystemMonitorWorker::readDiskData() {
                 dd.readBytesPerSec  = std::max(0LL, dd.readBytesPerSec);
                 dd.writeBytesPerSec = std::max(0LL, dd.writeBytesPerSec);
             }
-            // NVMe temp via hwmon
+            // nvme temps are a little scattered, so we try a couple routes
             {
                 const QDir hwmon("/sys/class/hwmon");
                 for (const QString& e : hwmon.entryList(QDir::Dirs | QDir::NoDotAndDotDot)) {
                     const QString hBase = "/sys/class/hwmon/" + e;
                     const QString hName = readFile(hBase + "/name");
                     if (!hName.startsWith("nvme")) continue;
-                    // Check if this hwmon is for our device
+                    // best case: this hwmon lines up with the current block device
                     const QString devLink =
                         QFile::symLinkTarget("/sys/block/" + name + "/device");
                     if (QFile::symLinkTarget(hBase + "/device").contains(name) ||
@@ -492,7 +510,7 @@ void SystemMonitorWorker::readDiskData() {
                     }
                     break;
                 }
-                // simpler: just scan all nvme hwmons and attribute first to first nvme device
+                // fallback: first nvme temp we find wins, which is still better than blank
                 if (dd.tempCelsius < 0 && name.startsWith("nvme")) {
                     for (const QString& e : hwmon.entryList(QDir::Dirs | QDir::NoDotAndDotDot)) {
                         const QString hBase = "/sys/class/hwmon/" + e;
@@ -513,7 +531,7 @@ void SystemMonitorWorker::readDiskData() {
     emit diskDataReady(partitions, devices);
 }
 
-// ── Network ───────────────────────────────────────────────────────────────────
+// network bits
 
 void SystemMonitorWorker::refreshIPAddresses() {
     m_lastIPRefreshNs = monoNs();
@@ -555,8 +573,9 @@ void SystemMonitorWorker::readNetworkData() {
 
     QTextStream ts(&f);
     ts.readLine(); ts.readLine(); // skip 2 header lines
-    while (!ts.atEnd()) {
-        const QString line = ts.readLine().trimmed();
+    QString line;
+    while (ts.readLineInto(&line)) {
+        line = line.trimmed();
         const int colon = line.indexOf(':');
         if (colon < 0) continue;
         const QString name = line.left(colon).trimmed();
@@ -575,7 +594,7 @@ void SystemMonitorWorker::readNetworkData() {
         nd.totalUploadBytes   = txBytes;
         nd.ipAddress          = m_ifaceIPs.value(name, "");
 
-        // Check link state
+        // operstate is cheap and good enough here
         nd.isUp = readFile("/sys/class/net/" + name + "/operstate") == "up";
 
         if (elapsedSec > 0 && m_prevNetStats.contains(name)) {
@@ -586,7 +605,7 @@ void SystemMonitorWorker::readNetworkData() {
                 std::max(0LL, static_cast<long long>((txBytes - prev.txBytes) / elapsedSec));
         }
 
-        // Histories
+        // keep a tiny history so the graphs have something to chew on
         if (!m_netDownHistory.contains(name))
             m_netDownHistory[name] = QVector<double>();
         if (!m_netUpHistory.contains(name))
@@ -607,7 +626,7 @@ void SystemMonitorWorker::readNetworkData() {
     emit networkDataReady(interfaces);
 }
 
-// ── Processes ─────────────────────────────────────────────────────────────────
+// process list and per-process stats
 
 void SystemMonitorWorker::readProcessData() {
     const long long now    = monoNs();
@@ -648,7 +667,7 @@ void SystemMonitorWorker::readProcessData() {
         long long utime = rest[11].toLongLong();
         long long stime = rest[12].toLongLong();
         long long starttime = rest[19].toLongLong();
-        long long rss       = rest[21].toLongLong(); // in pages
+        long long rss       = rest[21].toLongLong(); // kernel gives RSS in pages here
 
         long long totalTicks = utime + stime;
         newTimes[pid] = {totalTicks};
@@ -664,15 +683,15 @@ void SystemMonitorWorker::readProcessData() {
         double memPct = memTotalKB > 0 ?
             100.0 * (rss * pageSize / 1024) / memTotalKB : 0.0;
 
-        // UID -> username
+        // translate uid once so the table does not look like a prison roster
         QString user;
         {
             const QString statusPath = "/proc/" + e + "/status";
             QFile sf(statusPath);
             if (sf.open(QIODevice::ReadOnly | QIODevice::Text)) {
                 QTextStream sts(&sf);
-                while (!sts.atEnd()) {
-                    const QString line = sts.readLine();
+                QString line;
+                while (sts.readLineInto(&line)) {
                     if (line.startsWith("Uid:")) {
                         int uid = line.split('\t', Qt::SkipEmptyParts).value(1).toInt();
                         user = uidToUsername(uid);
@@ -682,7 +701,7 @@ void SystemMonitorWorker::readProcessData() {
             }
         }
 
-        // Kernel thread check: cmdline empty
+        // empty cmdline is a decent tell for kernel threads
         bool isKernel = false;
         {
             QFile cl("/proc/" + e + "/cmdline");
@@ -690,7 +709,7 @@ void SystemMonitorWorker::readProcessData() {
                 isKernel = cl.read(1).isEmpty();
         }
 
-        // Format start time
+        // turn process start ticks into something a human can glance at
         long long boottime = 0;
         {
             QFile upf("/proc/uptime");
@@ -737,26 +756,26 @@ void SystemMonitorWorker::readProcessData() {
     emit processDataReady(result);
 }
 
-// ── System Info ───────────────────────────────────────────────────────────────
+// basic system info for the overview bits
 
 void SystemMonitorWorker::readSystemInfo() {
     SystemInfo info;
 
-    // Hostname
+    // hostname first
     {
         char buf[256]{};
         gethostname(buf, sizeof(buf));
         info.hostname = QString::fromLocal8Bit(buf);
     }
 
-    // Kernel version
+    // then the kernel string
     {
         struct utsname u{};
         uname(&u);
         info.kernelVersion = QString::fromLocal8Bit(u.release);
     }
 
-    // Uptime
+    // uptime is straight from /proc/uptime
     {
         QFile f("/proc/uptime");
         if (f.open(QIODevice::ReadOnly | QIODevice::Text)) {
@@ -766,7 +785,7 @@ void SystemMonitorWorker::readSystemInfo() {
         }
     }
 
-    // Load averages
+    // same familiar load numbers as the cpu page
     {
         const QString la = readFile("/proc/loadavg");
         const QStringList p = la.split(' ', Qt::SkipEmptyParts);
@@ -780,7 +799,7 @@ void SystemMonitorWorker::readSystemInfo() {
     emit systemInfoReady(info);
 }
 
-// ── SystemMonitor (singleton + thread management) ─────────────────────────────
+// singleton wrapper and thread plumbing
 
 SystemMonitor& SystemMonitor::instance() {
     static SystemMonitor inst;
@@ -806,7 +825,7 @@ SystemMonitor::SystemMonitor(QObject* parent) : QObject(parent) {
             m_worker, &SystemMonitorWorker::poll,
             Qt::QueuedConnection);
 
-    // Re-emit worker signals as our own
+    // worker lives off-thread, but the rest of the app wants one simple signal surface
     connect(m_worker, &SystemMonitorWorker::cpuDataReady,
             this, &SystemMonitor::cpuDataUpdated,    Qt::QueuedConnection);
     connect(m_worker, &SystemMonitorWorker::memoryDataReady,
@@ -837,7 +856,7 @@ void SystemMonitor::start(int intervalMs) {
     m_timer = new QTimer(this);
     m_timer->setInterval(intervalMs);
     connect(m_timer, &QTimer::timeout, this, [this]{ emit triggerPoll(); });
-    // First poll after short delay to let initialize() run
+    // give initialize a tiny head start so the first poll is not half-empty
     QTimer::singleShot(500, this, [this]{ emit triggerPoll(); });
     m_timer->start();
 }
