@@ -22,6 +22,23 @@ Most system monitors drift into one of two extremes:
 - saved UI preferences through `QSettings`
 - custom cards, sparklines, bars, and sidebar styling
 
+## Screenshots
+
+### Main Window
+![Main Window](how%20it%20looks/2026-04-19-224810_1914x1068_scrot.png)
+
+### CPU Section
+![CPU Section](how%20it%20looks/2026-04-19-224818_1914x1074_scrot.png)
+
+### Memory Section
+![Memory Section](how%20it%20looks/2026-04-19-224829_1912x1079_scrot.png)
+
+### Task Section
+![Disk Section](how%20it%20looks/2026-04-19-224907_1912x1037_scrot.png)
+
+### Settings Section
+![Network Section](how%20it%20looks/2026-04-19-224916_1898x1027_scrot.png)
+
 ## Quick Start
 
 From the project root:
