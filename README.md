@@ -1,88 +1,89 @@
 # archvital
 
-`archvital` ist ein schlanker Desktop-Systemmonitor in Qt, gebaut für Leute, die ihre Kiste im Blick behalten wollen, ohne sich durch eine überladene UI zu kämpfen.
+A desktop system monitor for Linux that tries to stay useful, calm, and readable.
 
-Die App zeigt die wichtigsten Live-Daten zu CPU, RAM, GPU, Datenträgern, Netzwerk und Prozessen an, bringt eine Diagnostics-Seite mit und hat inzwischen auch eine Settings-Section, in der man Farben und sichtbare Bereiche anpassen kann.
+`archvital` gives you a clean overview of what your machine is doing without turning the whole screen into a cockpit. It is built with `Qt6`, written in `C++20`, and focused on the stuff you usually care about first: CPU, memory, GPU, disks, network activity, processes, diagnostics, and a customizable theme.
 
-## Was die App kann
+## Why This Exists
 
-- `Overview` für den schnellen Gesamtblick
-- `CPU`, `Memory`, `GPU`, `Disk`, `Network` und `Tasks` als eigene Seiten
-- `Diagnostics`, um typische Problemstellen einmal gesammelt zu prüfen
-- `Settings`, um Farben anzupassen und Sections ein- oder auszublenden
-- Theme- und UI-Einstellungen werden gespeichert
+Most system monitors drift into one of two extremes:
 
-## Tech Stack
+- they look old and feel cramped
+- they show everything at once and become visual noise
 
-- `C++20`
-- `Qt6` (`Widgets` und `Core`)
-- `CMake`
-- Linux-Systemdaten aus `/proc`, `/sys` und ein paar Systemtools wie `ip`, `systemctl` oder `journalctl`
+`archvital` aims for the middle ground: enough detail to be genuinely useful, but still pleasant to look at for more than ten seconds.
 
-## Build
+## Features
 
-Im Projektordner:
+- compact `Overview` page for the important numbers
+- dedicated pages for `CPU`, `Memory`, `GPU`, `Disk`, `Network`, and `Tasks`
+- `Diagnostics` page for a few common health checks
+- `Settings` page for theme colors and section visibility
+- saved UI preferences through `QSettings`
+- custom cards, sparklines, bars, and sidebar styling
+
+## Quick Start
+
+From the project root:
 
 ```bash
 cmake -S . -B build
 cmake --build build
-```
-
-Wenn der `build/`-Ordner schon existiert, reicht meistens:
-
-```bash
-cmake --build build
-```
-
-## Starten
-
-```bash
 ./build/archvital
 ```
 
-## Voraussetzungen
+If you already have a `build/` directory, this is usually enough:
 
-Du brauchst im Wesentlichen:
+```bash
+cmake --build build
+./build/archvital
+```
 
-- einen Linux-Desktop
+## Requirements
+
+You will mainly need:
+
+- Linux
 - `Qt6`
 - `cmake`
-- einen C++-Compiler mit C++20-Support
+- a C++ compiler with `C++20` support
 
-Je nach Distro heißen die Pakete etwas anders. Unter Arch wäre das grob sowas wie `qt6-base`, `cmake` und ein Compiler-Toolchain-Paket.
+Package names depend on your distro. On Arch Linux, you will usually want something along the lines of:
 
-## Projektstruktur
+- `qt6-base`
+- `cmake`
+- `gcc` or `clang`
 
-Nicht kompliziert gehalten:
+## What Is In Here
 
-- [`src/core`](./src/core) enthält Datenerfassung und die Strukturen dahinter
-- [`src/sections`](./src/sections) sind die einzelnen Seiten der App
-- [`src/ui`](./src/ui) enthält wiederverwendbare UI-Bausteine wie Sidebar, Cards und Sparklines
-- [`src/mainwindow.*`](./src/mainwindow.cpp) hält das Fenster, die Navigation und das Zusammensetzen der App zusammen
+- [`src/core`](./src/core) handles system data collection and shared data structs
+- [`src/sections`](./src/sections) contains the main app pages
+- [`src/ui`](./src/ui) contains reusable UI components like the sidebar, cards, sparklines, and bars
+- [`src/mainwindow.cpp`](./src/mainwindow.cpp) wires the app together
 
-## Einstellungen
+## Settings And Persistence
 
-Die App merkt sich unter anderem:
+`archvital` stores a few things so it feels like a normal desktop app instead of a goldfish:
 
-- Fensterzustand
-- eingeklappte Sidebar
-- zuletzt geöffnete Section
-- Theme-Farben
-- welche Sections sichtbar sein sollen
+- window geometry
+- collapsed sidebar state
+- last opened section
+- selected theme colors
+- which sections should be shown or hidden
 
-Das läuft über `QSettings`, also so, wie man es von einer normalen Desktop-App erwarten würde.
+This is handled with `QSettings`.
 
-## Status
+## Current Status
 
-Das Projekt ist benutzbar und fühlt sich schon ziemlich ordentlich an, aber es ist noch ein aktives Bastel- und Verbesserungsprojekt. Wenn dir beim Testen irgendwas komisch vorkommt: sehr gut, genau dafür ist GitHub da.
+The project is already usable and feels pretty solid, but it is still actively evolving. If you spot rough edges, odd readings, or UI stuff that feels off, that is valuable feedback, not nitpicking.
 
-## Mitmachen
+## Contributing
 
-Wenn du etwas verbessern willst:
+If you want to improve something:
 
-1. Repo klonen
-2. Branch machen
-3. Bauen und testen
-4. PR aufmachen
+1. clone the repo
+2. create a branch
+3. build and test your changes
+4. open a pull request
 
-Kleine saubere Verbesserungen sind meistens mehr wert als zehn große Ideen, die nie landen.
+Small, focused improvements are very welcome.
