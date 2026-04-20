@@ -42,6 +42,13 @@ jobs:
           sed -i "s/^pkgver=.*/pkgver=$VERSION/" PKGBUILD-stable
           sed -i "s/^pkgrel=.*/pkgrel=1/" PKGBUILD-stable
 
+      - name: Verify SSH key
+        run: |
+          echo "First line: $(head -1 /root/.ssh/aur)"
+          echo "Lines: $(wc -l < /root/.ssh/aur)"
+          echo "Bytes: $(wc -c < /root/.ssh/aur)"
+          ssh-keygen -l -f /root/.ssh/aur && echo "Key valid" || echo "Key INVALID"
+
       - name: Clone AUR repo
         run: git clone ssh://aur@aur.archlinux.org/archvital.git /tmp/aur
 
