@@ -57,8 +57,8 @@ jobs:
           git -C /tmp/aur-stable config user.name "T9Tuco"
           git -C /tmp/aur-stable config user.email "tucot9@tuta.io"
           git -C /tmp/aur-stable add PKGBUILD .SRCINFO
-          git -C /tmp/aur-stable commit -m "update to ${{ github.ref_name || github.event.inputs.tag }}"
-          git -C /tmp/aur-stable push
+          git -C /tmp/aur-stable diff --cached --quiet || git -C /tmp/aur-stable commit -m "update to ${{ github.ref_name || github.event.inputs.tag }}"
+          git -C /tmp/aur-stable push || true
 
       - name: Update archvital-git
         run: |
