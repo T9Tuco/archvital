@@ -1,6 +1,7 @@
 #include "networksection.h"
 
 #include <QScrollArea>
+#include <QSet>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QGridLayout>
@@ -152,7 +153,19 @@ NetworkSection::NetworkSection(QWidget* parent) : QWidget(parent) {
 }
 
 void NetworkSection::onNetworkUpdated(QVector<NetworkInterfaceData> ifaces) {
-    // Create new cards for new interfaces
+    QSet<QString> active;
+    for (const auto& iface : ifaces) active.insert(iface.name);
+
+    for (auto it = m_cards.begin(); it != m_cards.end(); ) {
+        if (!active.contains(it.key())) {
+            m_cardsLayout->removeWidget(it.value());
+            it.value()->deleteLater();
+            it = m_cards.erase(it);
+        } else {
+            ++it;
+        }
+    }
+
     for (const auto& iface : ifaces) {
         if (!m_cards.contains(iface.name)) {
             auto* card = new NetworkInterfaceCard(iface.name, m_cardsContainer);

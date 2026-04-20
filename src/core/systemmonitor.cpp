@@ -635,7 +635,8 @@ void SystemMonitorWorker::readProcessData() {
     long long memTotalKB = 0;
     {
         const QString mt = readFile("/proc/meminfo").section('\n', 0, 0);
-        memTotalKB = mt.split(QRegularExpression(R"(\s+)"), Qt::SkipEmptyParts).value(1).toLongLong();
+        const QStringList mtParts = mt.split(QRegularExpression(R"(\s+)"), Qt::SkipEmptyParts);
+        if (mtParts.size() > 1) memTotalKB = mtParts[1].toLongLong();
     }
     const long long pageSize = sysconf(_SC_PAGESIZE);
 
@@ -693,7 +694,8 @@ void SystemMonitorWorker::readProcessData() {
                 QString line;
                 while (sts.readLineInto(&line)) {
                     if (line.startsWith("Uid:")) {
-                        int uid = line.split('\t', Qt::SkipEmptyParts).value(1).toInt();
+                        const QStringList uidParts = line.split('\t', Qt::SkipEmptyParts);
+                        int uid = uidParts.size() > 1 ? uidParts[1].toInt() : 0;
                         user = uidToUsername(uid);
                         break;
                     }
@@ -710,7 +712,6 @@ void SystemMonitorWorker::readProcessData() {
         }
 
         // turn process start ticks into something a human can glance at
-        long long boottime = 0;
         {
             QFile upf("/proc/uptime");
             if (upf.open(QIODevice::ReadOnly | QIODevice::Text)) {
@@ -718,8 +719,6 @@ void SystemMonitorWorker::readProcessData() {
                 QDateTime boot = QDateTime::currentDateTime().addSecs(-static_cast<qint64>(upSec));
                 double procStartSec = static_cast<double>(starttime) / m_clkTck;
                 QDateTime procStart = boot.addMSecs(static_cast<qint64>(procStartSec * 1000));
-                static_cast<void>(boottime);
-                Q_UNUSED(boottime)
 
                 ProcessData pd;
                 pd.pid           = pidVal;
@@ -862,5 +861,10 @@ void SystemMonitor::start(int intervalMs) {
 }
 
 void SystemMonitor::stop() {
-    if (m_timer) { m_timer->stop(); m_timer->deleteLater(); m_timer = nullptr; }
+    if (m_timer) {
+        disconnect(m_timer, nullptr, this, nullptr);
+        m_timer->stop();
+        m_timer->deleteLater();
+        m_timer = nullptr;
+    }
 }

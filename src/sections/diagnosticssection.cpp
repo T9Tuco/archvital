@@ -282,8 +282,10 @@ void DiagnosticsSection::runDiagnostics() {
             QTextStream ts(&f);
             while (!ts.atEnd()) {
                 const QString line = ts.readLine();
-                if (line.startsWith("SwapTotal:"))
-                    swapTotal = line.split(QRegularExpression(R"(\s+)")).value(1).toLongLong();
+                if (line.startsWith("SwapTotal:")) {
+                    const QStringList sp = line.split(QRegularExpression(R"(\s+)"));
+                    if (sp.size() > 1) swapTotal = sp[1].toLongLong();
+                }
             }
             if (swapTotal == 0)
                 findings.append({DiagnosticFinding::Severity::Info,
