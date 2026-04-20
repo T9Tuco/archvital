@@ -28,12 +28,12 @@ jobs:
         run: |
           mkdir -p /root/.ssh
           chmod 700 /root/.ssh
-          printf '%s' "$AUR_SSH_PRIVATE_KEY" | tr -d '\r' > /root/.ssh/aur
-          chmod 600 /root/.ssh/aur
           ssh-keyscan -t rsa,ed25519 aur.archlinux.org > /root/.ssh/known_hosts
-          chmod 644 /root/.ssh/known_hosts
-          printf "Host aur.archlinux.org\n  IdentityFile /root/.ssh/aur\n  User aur\n  StrictHostKeyChecking yes\n  UserKnownHostsFile /root/.ssh/known_hosts\n" > /root/.ssh/config
-          chmod 600 /root/.ssh/config
+          eval "$(ssh-agent -s)"
+          echo "$AUR_SSH_PRIVATE_KEY" | tr -d '\r' | ssh-add -
+          echo "SSH_AUTH_SOCK=$SSH_AUTH_SOCK" >> $GITHUB_ENV
+          echo "SSH_AGENT_PID=$SSH_AGENT_PID" >> $GITHUB_ENV
+          printf "Host aur.archlinux.org\n  User aur\n  StrictHostKeyChecking yes\n  UserKnownHostsFile /root/.ssh/known_hosts\n" > /root/.ssh/config
 
       - name: Update PKGBUILD version
         run: |
@@ -41,13 +41,6 @@ jobs:
           VERSION="${VERSION#v}"
           sed -i "s/^pkgver=.*/pkgver=$VERSION/" PKGBUILD-stable
           sed -i "s/^pkgrel=.*/pkgrel=1/" PKGBUILD-stable
-
-      - name: Verify SSH key
-        run: |
-          echo "First line: $(head -1 /root/.ssh/aur)"
-          echo "Lines: $(wc -l < /root/.ssh/aur)"
-          echo "Bytes: $(wc -c < /root/.ssh/aur)"
-          ssh-keygen -l -f /root/.ssh/aur && echo "Key valid" || echo "Key INVALID"
 
       - name: Clone AUR repo
         run: git clone ssh://aur@aur.archlinux.org/archvital.git /tmp/aur
@@ -60,5 +53,5 @@ jobs:
           git config user.name "T9Tuco"
           git config user.email "tucot9@tuta.io"
           git add PKGBUILD .SRCINFO
-          git commit -m "update to ${{ github.ref_name }}"
+          git commit -m "update to ${{ github.ref_name || github.event.inputs.tag }}"
           git push
