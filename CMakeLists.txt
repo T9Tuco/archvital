@@ -6,7 +6,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 
-find_package(Qt6 REQUIRED COMPONENTS Widgets Core)
+find_package(Qt6 REQUIRED COMPONENTS Widgets Core Network)
 
 set(SOURCES
     src/main.cpp
@@ -32,7 +32,8 @@ add_executable(archvital ${SOURCES})
 
 target_include_directories(archvital PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
-target_link_libraries(archvital PRIVATE Qt6::Widgets Qt6::Core)
+target_link_libraries(archvital PRIVATE Qt6::Widgets Qt6::Core Qt6::Network)
+target_compile_definitions(archvital PRIVATE APP_VERSION="${PROJECT_VERSION}")
 
 target_compile_options(archvital PRIVATE -Wall -Wextra -Wpedantic)
 

@@ -6,6 +6,9 @@
 #include <QPushButton>
 #include <QVector>
 
+class QNetworkAccessManager;
+class QNetworkReply;
+
 namespace AppSections {
 enum Id {
     Overview = 0,
@@ -71,17 +74,27 @@ public:
     void setSectionVisible(int id, bool visible);
     bool isCollapsed() const { return m_collapsed; }
 
+protected:
+    void paintEvent(QPaintEvent*) override;
+
 signals:
     void sectionRequested(int id);
     void collapseToggled(bool collapsed);
 
-protected:
-    void paintEvent(QPaintEvent*) override;
+private slots:
+    void onUpdateCheckFinished(QNetworkReply* reply);
 
 private:
+    void checkForUpdates();
+    void showUpdateDialog();
+
     QVector<SidebarButton*> m_buttons;
     QPushButton*            m_collapseBtn{nullptr};
+    QPushButton*            m_verBtn{nullptr};
+    QNetworkAccessManager*  m_nam{nullptr};
     bool                    m_collapsed{false};
+    bool                    m_updateAvailable{false};
+    QString                 m_latestVersion;
 
     static constexpr int EXPANDED_W  = 152;
     static constexpr int COLLAPSED_W = 46;
