@@ -8,11 +8,19 @@ cmake_install.cmake
 compile_commands.json
 Makefile
 
+# AUR packaging (lives in its own repo, not here)
+.SRCINFO
+pkg/
+src.tar.gz
+*.pkg.tar.zst
+*.pkg.tar.xz
+
 # local editor / tool noise
 .codex
 .claude/
 .vscode/
 .idea/
+*.kate-swp
 
 # temp files
 *.swp
@@ -21,8 +29,18 @@ Makefile
 *.tmp
 *.temp
 
-# binaries / logs
+# binaries / object files / logs
+archvital
 *.log
 *.out
 *.o
 *.obj
+*.a
+*.so
+*.so.*
+
+# Qt / moc generated
+moc_*.cpp
+moc_*.h
+qrc_*.cpp
+ui_*.h
