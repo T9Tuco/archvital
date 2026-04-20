@@ -1,0 +1,47 @@
+name: AUR Update
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+jobs:
+  update-aur:
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: pacman -Syu --noconfirm openssh git
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.AUR_SSH_PRIVATE_KEY }}" > ~/.ssh/aur
+          chmod 600 ~/.ssh/aur
+          ssh-keyscan aur.archlinux.org >> ~/.ssh/known_hosts
+          echo -e "Host aur.archlinux.org\n  IdentityFile ~/.ssh/aur\n  User aur" > ~/.ssh/config
+
+      - name: Update PKGBUILD version
+        run: |
+          VERSION="${{ github.ref_name }}"
+          VERSION="${VERSION#v}"
+          sed -i "s/^pkgver=.*/pkgver=$VERSION/" PKGBUILD-stable
+          sed -i "s/^pkgrel=.*/pkgrel=1/" PKGBUILD-stable
+
+      - name: Clone AUR repo
+        run: git clone ssh://aur@aur.archlinux.org/archvital.git /tmp/aur
+
+      - name: Generate .SRCINFO and push
+        run: |
+          cp PKGBUILD-stable /tmp/aur/PKGBUILD
+          cd /tmp/aur
+          makepkg --printsrcinfo > .SRCINFO
+          git config user.name "T9Tuco"
+          git config user.email "tucot9@tuta.io"
+          git add PKGBUILD .SRCINFO
+          git commit -m "update to ${{ github.ref_name }}"
+          git push
