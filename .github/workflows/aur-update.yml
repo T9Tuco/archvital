@@ -51,9 +51,9 @@ jobs:
           useradd -m builder
           chown -R builder:builder /tmp/aur
           su builder -c "cd /tmp/aur && makepkg --printsrcinfo" > /tmp/aur/.SRCINFO
-          cd /tmp/aur
-          git config user.name "T9Tuco"
-          git config user.email "tucot9@tuta.io"
-          git add PKGBUILD .SRCINFO
-          git commit -m "update to ${{ github.ref_name || github.event.inputs.tag }}"
-          git push
+          git config --global --add safe.directory /tmp/aur
+          git -C /tmp/aur config user.name "T9Tuco"
+          git -C /tmp/aur config user.email "tucot9@tuta.io"
+          git -C /tmp/aur add PKGBUILD .SRCINFO
+          git -C /tmp/aur commit -m "update to ${{ github.ref_name || github.event.inputs.tag }}"
+          git -C /tmp/aur push
