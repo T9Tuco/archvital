@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(archvital VERSION 1.2.5 LANGUAGES CXX)
+project(archvital VERSION 1.3.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
