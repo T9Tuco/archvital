@@ -49,6 +49,8 @@ curl -fsSL https://raw.githubusercontent.com/T9Tuco/archvital/main/install.sh | 
 
 That is it. Downloads the latest build, installs the binary, registers the desktop entry and icon. Your app launcher will find it immediately after.
 
+The same command works for updates. If a newer version is available, the app will show `↑` next to the version number in the bottom left of the sidebar — click it and the command is right there.
+
 ### From AUR (Arch Linux)
 
 Two packages are available depending on what you want:
