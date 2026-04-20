@@ -37,3 +37,5 @@ target_link_libraries(archvital PRIVATE Qt6::Widgets Qt6::Core)
 target_compile_options(archvital PRIVATE -Wall -Wextra -Wpedantic)
 
 install(TARGETS archvital RUNTIME DESTINATION bin)
+install(FILES archvital.desktop DESTINATION share/applications)
+install(FILES assets/archvital.svg DESTINATION share/pixmaps)

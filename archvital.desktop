@@ -1,0 +1,12 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=ArchVital
+GenericName=System Monitor
+Comment=Qt6 system monitor for Arch Linux
+Exec=archvital
+Icon=archvital
+Categories=System;Monitor;
+Keywords=system;monitor;cpu;memory;disk;network;gpu;
+StartupNotify=true
+StartupWMClass=archvital

@@ -1,0 +1,43 @@
+name: Tagged Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: pacman -Syu --noconfirm cmake qt6-base gcc make
+
+      - name: Configure
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
+
+      - name: Build
+        run: cmake --build build --parallel $(nproc)
+
+      - name: Package
+        run: |
+          mkdir -p dist
+          cp build/archvital dist/archvital
+          cp archvital.desktop dist/
+          cp assets/archvital.svg dist/
+          tar -czf archvital-${{ github.ref_name }}-linux-x86_64.tar.gz -C dist .
+
+      - name: Create versioned release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "ArchVital ${{ github.ref_name }}"
+          generate_release_notes: true
+          make_latest: true
+          files: archvital-${{ github.ref_name }}-linux-x86_64.tar.gz

@@ -1,0 +1,57 @@
+name: Build & Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: pacman -Syu --noconfirm cmake qt6-base gcc make
+
+      - name: Configure
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
+
+      - name: Build
+        run: cmake --build build --parallel $(nproc)
+
+      - name: Package binary
+        run: |
+          mkdir -p dist
+          cp build/archvital dist/archvital
+          cp archvital.desktop dist/
+          cp assets/archvital.svg dist/
+          tar -czf archvital-linux-x86_64.tar.gz -C dist .
+
+      - name: Update latest release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: "Latest Build"
+          body: |
+            Automatically built from the latest commit on `main`.
+
+            **Commit:** ${{ github.sha }}
+            **Date:** ${{ github.event.head_commit.timestamp }}
+
+            ### Installation
+            ```bash
+            tar -xzf archvital-linux-x86_64.tar.gz
+            sudo cp archvital /usr/local/bin/
+            sudo cp archvital.desktop /usr/share/applications/
+            sudo cp archvital.svg /usr/share/pixmaps/
+            ```
+          prerelease: true
+          make_latest: false
+          files: archvital-linux-x86_64.tar.gz
