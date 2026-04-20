@@ -39,9 +39,54 @@ Most system monitors drift into one of two extremes:
 ### Settings Section
 <img src="how it looks/2026-04-19-224916_1898x1027_scrot.png" alt="Network Section" width="600">
 
+## Installing
+
+### From GitHub Releases
+
+Every push to `main` automatically builds and uploads a fresh binary under the [latest release](https://github.com/T9Tuco/archvital/releases/tag/latest). If you just want to run it without building anything:
+
+```bash
+tar -xzf archvital-linux-x86_64.tar.gz
+sudo cp archvital /usr/local/bin/
+sudo cp archvital.desktop /usr/share/applications/
+sudo cp archvital.svg /usr/share/pixmaps/
+```
+
+After that, your app launcher will pick it up like any other installed application.
+
+For versioned releases, check the [releases page](https://github.com/T9Tuco/archvital/releases). Tagged releases like `v1.0.0` are built the same way but marked as stable.
+
+### From AUR (Arch Linux)
+
+If you are on Arch and have an AUR helper:
+
+```bash
+yay -S archvital-git
+```
+
+Or manually with the included `PKGBUILD`:
+
+```bash
+makepkg -si
+```
+
+This builds from source, installs the binary to `/usr/bin`, registers the desktop entry, and drops the icon in the right place.
+
+### Build and Install Manually
+
+If you want to install it properly to the system rather than just running the binary in place:
+
+```bash
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
+cmake --build build --parallel
+sudo cmake --install build
+```
+
+This puts the binary in `/usr/bin/archvital`, installs the `.desktop` file, and registers the icon so the system actually knows the app exists.
+
 ## Quick Start
 
-From the project root:
+If you just want to build and run without installing anything:
 
 ```bash
 cmake -S . -B build
