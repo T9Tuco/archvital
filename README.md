@@ -70,6 +70,24 @@ cmake --build build --parallel
 sudo cmake --install build
 ```
 
+## Uninstalling
+
+If you installed via the one-liner or manually:
+
+```bash
+sudo rm /usr/local/bin/archvital
+sudo rm /usr/share/applications/archvital.desktop
+sudo rm /usr/share/pixmaps/archvital.svg
+```
+
+If you installed via AUR:
+
+```bash
+yay -R archvital
+# or
+yay -R archvital-git
+```
+
 ## Quick Start
 
 If you just want to build and run without installing anything:
