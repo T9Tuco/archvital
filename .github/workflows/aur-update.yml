@@ -4,6 +4,11 @@ on:
   push:
     tags:
       - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to deploy (e.g. v1.2.0)"
+        required: true
 
 jobs:
   update-aur:
@@ -30,7 +35,7 @@ jobs:
 
       - name: Update PKGBUILD version
         run: |
-          VERSION="${{ github.ref_name }}"
+          VERSION="${{ github.ref_name || github.event.inputs.tag }}"
           VERSION="${VERSION#v}"
           sed -i "s/^pkgver=.*/pkgver=$VERSION/" PKGBUILD-stable
           sed -i "s/^pkgrel=.*/pkgrel=1/" PKGBUILD-stable
