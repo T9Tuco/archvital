@@ -20,10 +20,13 @@ jobs:
       - name: Setup SSH
         run: |
           mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
           echo "${{ secrets.AUR_SSH_PRIVATE_KEY }}" > ~/.ssh/aur
           chmod 600 ~/.ssh/aur
-          ssh-keyscan aur.archlinux.org >> ~/.ssh/known_hosts
-          echo -e "Host aur.archlinux.org\n  IdentityFile ~/.ssh/aur\n  User aur" > ~/.ssh/config
+          ssh-keyscan -t rsa,ed25519 aur.archlinux.org >> ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+          printf "Host aur.archlinux.org\n  IdentityFile ~/.ssh/aur\n  User aur\n  StrictHostKeyChecking yes\n" > ~/.ssh/config
+          chmod 600 ~/.ssh/config
 
       - name: Update PKGBUILD version
         run: |
