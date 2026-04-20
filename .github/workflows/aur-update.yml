@@ -42,18 +42,31 @@ jobs:
           sed -i "s/^pkgver=.*/pkgver=$VERSION/" PKGBUILD-stable
           sed -i "s/^pkgrel=.*/pkgrel=1/" PKGBUILD-stable
 
-      - name: Clone AUR repo
-        run: git clone ssh://aur@aur.archlinux.org/archvital.git /tmp/aur
-
-      - name: Generate .SRCINFO and push
+      - name: Clone AUR repos
         run: |
-          cp PKGBUILD-stable /tmp/aur/PKGBUILD
+          git clone ssh://aur@aur.archlinux.org/archvital.git /tmp/aur-stable
+          git clone ssh://aur@aur.archlinux.org/archvital-git.git /tmp/aur-git
+
+      - name: Update archvital (stable)
+        run: |
+          cp PKGBUILD-stable /tmp/aur-stable/PKGBUILD
           useradd -m builder
-          chown -R builder:builder /tmp/aur
-          su builder -c "cd /tmp/aur && makepkg --printsrcinfo" > /tmp/aur/.SRCINFO
-          git config --global --add safe.directory /tmp/aur
-          git -C /tmp/aur config user.name "T9Tuco"
-          git -C /tmp/aur config user.email "tucot9@tuta.io"
-          git -C /tmp/aur add PKGBUILD .SRCINFO
-          git -C /tmp/aur commit -m "update to ${{ github.ref_name || github.event.inputs.tag }}"
-          git -C /tmp/aur push
+          chown -R builder:builder /tmp/aur-stable /tmp/aur-git
+          su builder -c "cd /tmp/aur-stable && makepkg --printsrcinfo" > /tmp/aur-stable/.SRCINFO
+          git config --global --add safe.directory /tmp/aur-stable
+          git -C /tmp/aur-stable config user.name "T9Tuco"
+          git -C /tmp/aur-stable config user.email "tucot9@tuta.io"
+          git -C /tmp/aur-stable add PKGBUILD .SRCINFO
+          git -C /tmp/aur-stable commit -m "update to ${{ github.ref_name || github.event.inputs.tag }}"
+          git -C /tmp/aur-stable push
+
+      - name: Update archvital-git
+        run: |
+          cp PKGBUILD /tmp/aur-git/PKGBUILD
+          su builder -c "cd /tmp/aur-git && makepkg --printsrcinfo" > /tmp/aur-git/.SRCINFO
+          git config --global --add safe.directory /tmp/aur-git
+          git -C /tmp/aur-git config user.name "T9Tuco"
+          git -C /tmp/aur-git config user.email "tucot9@tuta.io"
+          git -C /tmp/aur-git add PKGBUILD .SRCINFO
+          git -C /tmp/aur-git diff --cached --quiet || git -C /tmp/aur-git commit -m "update to ${{ github.ref_name || github.event.inputs.tag }}"
+          git -C /tmp/aur-git push || true
