@@ -12,6 +12,8 @@
 #include <QProcess>
 #include <QBrush>
 #include <QColor>
+#include <QSet>
+#include <QHash>
 #include <signal.h>
 #include "core/systemmonitor.h"
 #include "ui/stylesheet.h"
@@ -24,16 +26,30 @@ ProcessTableModel::ProcessTableModel(QObject* parent) : QAbstractTableModel(pare
 int ProcessTableModel::rowCount(const QModelIndex&)    const { return m_procs.size(); }
 int ProcessTableModel::columnCount(const QModelIndex&) const { return Col::COUNT; }
 
+QString ProcessTableModel::colText(const ProcessData& p, int col) {
+    switch (col) {
+        case PID:     return QString::number(p.pid);
+        case Name:    return p.name;
+        case User:    return p.user;
+        case CPU:     return QString::number(p.cpuPercent, 'f', 1);
+        case MemMB:   return QString::number(p.memBytes / 1024 / 1024);
+        case MemPct:  return QString::number(p.memPercent, 'f', 1);
+        case Status:  return p.status;
+        case Started: return p.startTime;
+    }
+    return {};
+}
+
 QVariant ProcessTableModel::headerData(int section, Qt::Orientation orientation, int role) const {
     if (orientation != Qt::Horizontal || role != Qt::DisplayRole) return {};
     switch (section) {
-        case PID:    return "PID";
-        case Name:   return "Name";
-        case User:   return "User";
-        case CPU:    return "CPU %";
-        case MemMB:  return "MEM (MB)";
-        case MemPct: return "MEM %";
-        case Status: return "Status";
+        case PID:     return "PID";
+        case Name:    return "Name";
+        case User:    return "User";
+        case CPU:     return "CPU %";
+        case MemMB:   return "MEM (MB)";
+        case MemPct:  return "MEM %";
+        case Status:  return "Status";
         case Started: return "Started";
     }
     return {};
@@ -43,22 +59,12 @@ QVariant ProcessTableModel::data(const QModelIndex& index, int role) const {
     if (!index.isValid() || index.row() >= m_procs.size()) return {};
     const auto& p = m_procs[index.row()];
 
-    if (role == Qt::DisplayRole) {
-        switch (index.column()) {
-            case PID:    return p.pid;
-            case Name:   return p.name;
-            case User:   return p.user;
-            case CPU:    return QString::number(p.cpuPercent, 'f', 1);
-            case MemMB:  return QString::number(p.memBytes / 1024 / 1024);
-            case MemPct: return QString::number(p.memPercent, 'f', 1);
-            case Status: return p.status;
-            case Started: return p.startTime;
-        }
-    }
+    if (role == Qt::DisplayRole)
+        return colText(p, index.column());
 
     if (role == Qt::ForegroundRole) {
-        if (p.status == "Z") return QBrush(Style::errorColor());
-        if (p.cpuPercent > 50) return QBrush(Style::warningColor());
+        if (p.status == "Z")       return QBrush(Style::errorColor());
+        if (p.cpuPercent > 50)     return QBrush(Style::warningColor());
     }
 
     if (role == Qt::TextAlignmentRole) {
@@ -69,7 +75,6 @@ QVariant ProcessTableModel::data(const QModelIndex& index, int role) const {
     }
 
     if (role == Qt::UserRole) {
-        // Return raw numeric value for sorting numeric columns
         switch (index.column()) {
             case PID:    return p.pid;
             case CPU:    return p.cpuPercent;
@@ -81,10 +86,41 @@ QVariant ProcessTableModel::data(const QModelIndex& index, int role) const {
     return {};
 }
 
-void ProcessTableModel::setProcesses(const QVector<ProcessData>& procs) {
-    beginResetModel();
-    m_procs = procs;
-    endResetModel();
+void ProcessTableModel::setProcesses(const QVector<ProcessData>& newProcs) {
+    QHash<int, ProcessData> newByPid;
+    for (const auto& p : newProcs)
+        newByPid[p.pid] = p;
+
+    // remove rows for PIDs that disappeared
+    for (int i = m_procs.size() - 1; i >= 0; --i) {
+        if (!newByPid.contains(m_procs[i].pid)) {
+            beginRemoveRows({}, i, i);
+            m_procs.removeAt(i);
+            endRemoveRows();
+        }
+    }
+
+    // update existing rows, emit dataChanged only when data actually changed
+    QSet<int> seen;
+    for (int i = 0; i < m_procs.size(); ++i) {
+        seen.insert(m_procs[i].pid);
+        const auto& np = newByPid[m_procs[i].pid];
+        if (m_procs[i].cpuPercent != np.cpuPercent ||
+            m_procs[i].memBytes   != np.memBytes   ||
+            m_procs[i].status     != np.status) {
+            m_procs[i] = np;
+            emit dataChanged(index(i, 0), index(i, COUNT - 1));
+        }
+    }
+
+    // append rows for new PIDs
+    for (const auto& p : newProcs) {
+        if (!seen.contains(p.pid)) {
+            beginInsertRows({}, m_procs.size(), m_procs.size());
+            m_procs.append(p);
+            endInsertRows();
+        }
+    }
 }
 
 // ── ProcessFilterProxy ────────────────────────────────────────────────────────
@@ -105,17 +141,6 @@ bool ProcessFilterProxy::filterAcceptsRow(int row, const QModelIndex& parent) co
     const auto* m = static_cast<const ProcessTableModel*>(sourceModel());
     if (!m_showKernel && m->processAt(row).isKernelThread) return false;
     return QSortFilterProxyModel::filterAcceptsRow(row, parent);
-}
-
-bool lessThanNumeric(const QModelIndex& left, const QModelIndex& right) {
-    const auto lv = left.data(Qt::UserRole);
-    const auto rv = right.data(Qt::UserRole);
-    if (lv.isValid() && rv.isValid()) {
-        if (lv.typeId() == QMetaType::Double)
-            return lv.toDouble() < rv.toDouble();
-        return lv.toLongLong() < rv.toLongLong();
-    }
-    return left.data().toString() < right.data().toString();
 }
 
 // ── TaskSection ───────────────────────────────────────────────────────────────
@@ -199,15 +224,24 @@ TaskSection::TaskSection(QWidget* parent) : QWidget(parent) {
     // Tree view
     m_treeView = new QTreeWidget(this);
     m_treeView->setColumnCount(ProcessTableModel::COUNT);
-    QStringList treeHeaders = {"PID","Name","User","CPU %","MEM (MB)","MEM %","Status","Started"};
-    m_treeView->setHeaderLabels(treeHeaders);
+    m_treeView->setHeaderLabels({"PID","Name","User","CPU %","MEM (MB)","MEM %","Status","Started"});
     m_treeView->setContextMenuPolicy(Qt::CustomContextMenu);
     m_treeView->setAlternatingRowColors(true);
     m_viewStack->addWidget(m_treeView);
 
+    // filter debounce — avoids re-filtering on every keystroke with many processes
+    m_filterTimer = new QTimer(this);
+    m_filterTimer->setSingleShot(true);
+    m_filterTimer->setInterval(150);
+
     // Connections
     connect(m_searchBox, &QLineEdit::textChanged, this, [this](const QString& t){
-        m_proxy->setFilterFixedString(t);
+        m_pendingFilter = t;
+        m_filterTimer->start();
+    });
+    connect(m_filterTimer, &QTimer::timeout, this, [this]{
+        m_proxy->setFilterFixedString(m_pendingFilter);
+        if (m_treeMode) rebuildTree();
     });
     connect(m_kernelCheck, &QCheckBox::toggled, this, [this](bool c){
         m_proxy->setShowKernelThreads(c);
@@ -236,7 +270,6 @@ void TaskSection::onProcessesUpdated(QVector<ProcessData> procs) {
 }
 
 void TaskSection::rebuildTree() {
-    m_treeView->clear();
     const bool showKernel = m_kernelCheck->isChecked();
     const QString filter  = m_searchBox->text().toLower();
 
@@ -244,26 +277,23 @@ void TaskSection::rebuildTree() {
 
     auto makeItem = [&](const ProcessData& p) -> QTreeWidgetItem* {
         auto* item = new QTreeWidgetItem();
-        item->setText(0, QString::number(p.pid));
-        item->setText(1, p.name);
-        item->setText(2, p.user);
-        item->setText(3, QString::number(p.cpuPercent, 'f', 1));
-        item->setText(4, QString::number(p.memBytes / 1024 / 1024));
-        item->setText(5, QString::number(p.memPercent, 'f', 1));
-        item->setText(6, p.status);
-        item->setText(7, p.startTime);
+        for (int c = 0; c < ProcessTableModel::COUNT; ++c)
+            item->setText(c, ProcessTableModel::colText(p, c));
         item->setData(0, Qt::UserRole, p.pid);
         if (p.status == "Z") {
-            for (int c = 0; c < 8; c++)
+            for (int c = 0; c < ProcessTableModel::COUNT; ++c)
                 item->setForeground(c, QBrush(Style::errorColor()));
         } else if (p.cpuPercent > 50) {
-            for (int c = 0; c < 8; c++)
+            for (int c = 0; c < ProcessTableModel::COUNT; ++c)
                 item->setForeground(c, QBrush(Style::warningColor()));
         }
         return item;
     };
 
-    // Build by PID lookup
+    m_treeView->setUpdatesEnabled(false);
+    m_treeView->blockSignals(true);
+    m_treeView->clear();
+
     for (const auto& p : m_latestProcs) {
         if (!showKernel && p.isKernelThread) continue;
         if (!filter.isEmpty() &&
@@ -272,7 +302,6 @@ void TaskSection::rebuildTree() {
         items[p.pid] = makeItem(p);
     }
 
-    // Build tree
     for (const auto& p : m_latestProcs) {
         if (!items.contains(p.pid)) continue;
         auto* item = items[p.pid];
@@ -281,7 +310,10 @@ void TaskSection::rebuildTree() {
         else
             m_treeView->addTopLevelItem(item);
     }
+
     m_treeView->expandToDepth(1);
+    m_treeView->blockSignals(false);
+    m_treeView->setUpdatesEnabled(true);
 }
 
 void TaskSection::showContextMenu(const QPoint& pos) {
@@ -307,13 +339,13 @@ void TaskSection::showContextMenu(const QPoint& pos) {
     menu.addAction(QString("PID: %1 — %2").arg(pid).arg(procName))->setEnabled(false);
     menu.addSeparator();
 
-    auto* killAct    = menu.addAction("Kill (SIGKILL)");
-    auto* termAct    = menu.addAction("Terminate (SIGTERM)");
-    auto* suspAct    = menu.addAction("Suspend (SIGSTOP)");
-    auto* resumeAct  = menu.addAction("Resume (SIGCONT)");
+    auto* killAct   = menu.addAction("Kill (SIGKILL)");
+    auto* termAct   = menu.addAction("Terminate (SIGTERM)");
+    auto* suspAct   = menu.addAction("Suspend (SIGSTOP)");
+    auto* resumeAct = menu.addAction("Resume (SIGCONT)");
     menu.addSeparator();
-    auto* copyAct    = menu.addAction("Copy PID");
-    auto* folderAct  = menu.addAction("Open /proc folder");
+    auto* copyAct   = menu.addAction("Copy PID");
+    auto* folderAct = menu.addAction("Open /proc folder");
 
     connect(killAct,   &QAction::triggered, [this, pid]{ sendSignal(pid, SIGKILL, "Killed");     });
     connect(termAct,   &QAction::triggered, [this, pid]{ sendSignal(pid, SIGTERM, "Terminated"); });
@@ -342,8 +374,7 @@ void TaskSection::sendSignal(int pid, int sig, const QString& actionName) {
         if (reply != QMessageBox::Yes) return;
     }
     if (::kill(static_cast<pid_t>(pid), sig) == 0)
-        ToastManager::instance().success(
-            actionName + " PID " + QString::number(pid));
+        ToastManager::instance().success(actionName + " PID " + QString::number(pid));
     else
         ToastManager::instance().error(
             "Failed to signal PID " + QString::number(pid) +
