@@ -51,15 +51,14 @@ That is it. Downloads the latest build, installs the binary, registers the deskt
 
 ### From AUR (Arch Linux)
 
-```bash
-yay -S archvital-git
-```
-
-Or manually with the included `PKGBUILD`:
+Two packages are available depending on what you want:
 
 ```bash
-makepkg -si
+yay -S archvital      # stable release
+yay -S archvital-git  # latest commit
 ```
+
+Both install the binary, the desktop entry, and the icon. The stable one tracks tagged releases. The git one builds from whatever is currently on `main`.
 
 ### Build and Install Manually
 
