@@ -1,5 +1,9 @@
 # archvital
 
+[![GitHub Release](https://img.shields.io/github/v/release/T9Tuco/archvital?label=latest%20release&color=4f8ef7)](https://github.com/T9Tuco/archvital/releases/latest)
+[![AUR Version](https://img.shields.io/aur/version/archvital?label=AUR%20stable&color=4f8ef7)](https://aur.archlinux.org/packages/archvital)
+[![AUR Version](https://img.shields.io/aur/version/archvital-git?label=AUR%20git&color=6ea8fe)](https://aur.archlinux.org/packages/archvital-git)
+
 A desktop system monitor for Linux that tries to stay useful, calm, and readable.
 
 `archvital` gives you a clean overview of what your machine is doing without turning the whole screen into a cockpit. It is built with `Qt6`, written in `C++20`, and focused on the stuff you usually care about first: CPU, memory, GPU, disks, network activity, processes, diagnostics, and a customizable theme.
