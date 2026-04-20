@@ -132,9 +132,17 @@ ProcessFilterProxy::ProcessFilterProxy(QObject* parent)
 }
 
 void ProcessFilterProxy::setShowKernelThreads(bool show) {
-    m_showKernel = show;
+    if (m_showKernel == show)
+        return;
+
+#if QT_VERSION >= QT_VERSION_CHECK(6, 9, 0)
     beginFilterChange();
+    m_showKernel = show;
     endFilterChange();
+#else
+    m_showKernel = show;
+    invalidateFilter();
+#endif
 }
 
 bool ProcessFilterProxy::filterAcceptsRow(int row, const QModelIndex& parent) const {
