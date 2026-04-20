@@ -48,8 +48,10 @@ jobs:
       - name: Generate .SRCINFO and push
         run: |
           cp PKGBUILD-stable /tmp/aur/PKGBUILD
+          useradd -m builder
+          chown -R builder:builder /tmp/aur
+          su builder -c "cd /tmp/aur && makepkg --printsrcinfo" > /tmp/aur/.SRCINFO
           cd /tmp/aur
-          makepkg --printsrcinfo > .SRCINFO
           git config user.name "T9Tuco"
           git config user.email "tucot9@tuta.io"
           git add PKGBUILD .SRCINFO
