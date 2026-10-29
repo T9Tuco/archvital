@@ -5,6 +5,7 @@
 #include <QTimer>
 #include <QMutex>
 #include <QHash>
+#include <QProcess>
 #include "datastructs.h"
 
 class SystemMonitorWorker : public QObject {
@@ -92,6 +93,24 @@ private:
     // uid lookup cache, because repeating getpwuid all day is silly
     QHash<int, QString> m_uidCache;
 
+    // short swap trend, same idea as m_memHistory
+    QVector<double> m_swapHistory;
+
+    // network usage per process: nethogs runs as a child that keeps running
+    // and streams "prog/pid/uid<TAB>sent_KBps<TAB>recv_KBps" lines that we
+    // parse as they come in. optional, stays unavailable if the binary is
+    // missing or it can't get packet capture rights, and we never retry it
+    // over and over.
+    QProcess* m_nethogsProc{nullptr};
+    bool m_nethogsTried{false};
+    QString m_nethogsLineBuf;
+    QHash<int, QPair<double, double>> m_pidNetRatesKBps; // pid -> (sent, recv)
+
+    // gpu busy time per process, read from /proc/<pid>/fdinfo (amdgpu/i915 only,
+    // nvidia-smi has no such counter per fd so we only get vram for it below)
+    QHash<int, long long> m_prevGpuBusyNs;
+    long long m_prevGpuBusyNs_time{0};
+
     void readCpuData();
     void readMemoryData();
     void readGpuData();
@@ -103,6 +122,9 @@ private:
     RawCpuStat parseCpuStatLine(const QStringList& parts);
     void detectGpu();
     void refreshIPAddresses();
+    void startNethogs();
+    void parseNethogsOutput();
+    void readProcessGpuUsage(QHash<int, double>& gpuPct, QHash<int, long long>& gpuMemMB);
     QString uidToUsername(int uid);
     QString readFile(const QString& path);
     long long readFileLong(const QString& path, long long def = -1);

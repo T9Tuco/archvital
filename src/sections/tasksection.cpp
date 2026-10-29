@@ -14,6 +14,7 @@
 #include <QColor>
 #include <QSet>
 #include <QHash>
+#include <algorithm>
 #include <signal.h>
 #include "core/systemmonitor.h"
 #include "ui/stylesheet.h"
@@ -26,6 +27,13 @@ ProcessTableModel::ProcessTableModel(QObject* parent) : QAbstractTableModel(pare
 int ProcessTableModel::rowCount(const QModelIndex&)    const { return m_procs.size(); }
 int ProcessTableModel::columnCount(const QModelIndex&) const { return Col::COUNT; }
 
+static QString fmtRate(long long bytesPerSec) {
+    if (bytesPerSec < 0) return "—";
+    if (bytesPerSec < 1024) return QString("%1 B/s").arg(bytesPerSec);
+    if (bytesPerSec < 1024 * 1024) return QString::number(bytesPerSec / 1024.0, 'f', 1) + " KB/s";
+    return QString::number(bytesPerSec / 1024.0 / 1024.0, 'f', 1) + " MB/s";
+}
+
 QString ProcessTableModel::colText(const ProcessData& p, int col) {
     switch (col) {
         case PID:     return QString::number(p.pid);
@@ -34,6 +42,10 @@ QString ProcessTableModel::colText(const ProcessData& p, int col) {
         case CPU:     return QString::number(p.cpuPercent, 'f', 1);
         case MemMB:   return QString::number(p.memBytes / 1024 / 1024);
         case MemPct:  return QString::number(p.memPercent, 'f', 1);
+        case NetIO:
+            if (p.netDownBytesPerSec < 0) return "—";
+            return "↓" + fmtRate(p.netDownBytesPerSec) + " ↑" + fmtRate(p.netUpBytesPerSec);
+        case GpuPct:  return p.gpuUsagePercent < 0 ? "—" : QString::number(p.gpuUsagePercent, 'f', 1);
         case Status:  return p.status;
         case Started: return p.startTime;
     }
@@ -49,6 +61,8 @@ QVariant ProcessTableModel::headerData(int section, Qt::Orientation orientation,
         case CPU:     return "CPU %";
         case MemMB:   return "MEM (MB)";
         case MemPct:  return "MEM %";
+        case NetIO:   return "Network";
+        case GpuPct:  return "GPU %";
         case Status:  return "Status";
         case Started: return "Started";
     }
@@ -68,8 +82,8 @@ QVariant ProcessTableModel::data(const QModelIndex& index, int role) const {
     }
 
     if (role == Qt::TextAlignmentRole) {
-        if (index.column() == PID || index.column() == CPU ||
-            index.column() == MemMB || index.column() == MemPct)
+        if (index.column() == PID || index.column() == CPU || index.column() == GpuPct ||
+            index.column() == MemMB || index.column() == MemPct || index.column() == NetIO)
             return QVariant(static_cast<int>(Qt::AlignRight | Qt::AlignVCenter));
         return QVariant(static_cast<int>(Qt::AlignVCenter));
     }
@@ -80,6 +94,9 @@ QVariant ProcessTableModel::data(const QModelIndex& index, int role) const {
             case CPU:    return p.cpuPercent;
             case MemMB:  return static_cast<long long>(p.memBytes / 1024 / 1024);
             case MemPct: return p.memPercent;
+            case NetIO:  return static_cast<qlonglong>(
+                             std::max(p.netDownBytesPerSec, 0LL) + std::max(p.netUpBytesPerSec, 0LL));
+            case GpuPct: return p.gpuUsagePercent;
         }
     }
 
@@ -224,7 +241,8 @@ TaskSection::TaskSection(QWidget* parent) : QWidget(parent) {
     // Tree view
     m_treeView = new QTreeWidget(this);
     m_treeView->setColumnCount(ProcessTableModel::COUNT);
-    m_treeView->setHeaderLabels({"PID","Name","User","CPU %","MEM (MB)","MEM %","Status","Started"});
+    m_treeView->setHeaderLabels({"PID","Name","User","CPU %","MEM (MB)","MEM %",
+                                  "Network","GPU %","Status","Started"});
     m_treeView->setContextMenuPolicy(Qt::CustomContextMenu);
     m_treeView->setAlternatingRowColors(true);
     m_viewStack->addWidget(m_treeView);

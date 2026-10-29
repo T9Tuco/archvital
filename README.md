@@ -4,69 +4,91 @@
 [![AUR Version](https://img.shields.io/aur/version/archvital?label=AUR%20stable&color=4f8ef7)](https://aur.archlinux.org/packages/archvital)
 [![AUR Version](https://img.shields.io/aur/version/archvital-git?label=AUR%20git&color=6ea8fe)](https://aur.archlinux.org/packages/archvital-git)
 
-A desktop system monitor for Linux that tries to stay useful, calm, and readable.
+hi, i'm tuco. this is archvital, a desktop system monitor for linux that i built because i wanted something between "ancient terminal table" and "visual cockpit with forty gauges".
 
-`archvital` gives you a clean overview of what your machine is doing without turning the whole screen into a cockpit. It is built with `Qt6`, written in `C++20`, and focused on the stuff you usually care about first: CPU, memory, GPU, disks, network activity, processes, diagnostics, and a customizable theme.
+if you're here, you're probably one of these:
 
-## Why This Exists
+* an arch user deciding if this replaces btop/htop or just sits next to them
+* someone who found it on aur and wants to see the source before installing
+* a recruiter trying to figure out if i'm serious (im not)
+* me, checking if the latest release actually builds
 
-Most system monitors drift into one of two extremes:
+## what is this place?
 
-- they look old and feel cramped
-- they show everything at once and become visual noise
+it's a qt6/c++20 app that watches your machine and tries to stay calm about it. no cockpit full of gauges, no ancient gray table either, just the numbers you actually look at:
 
-`archvital` aims for the middle ground: enough detail to be genuinely useful, but still pleasant to look at for more than ten seconds.
+* a compact `overview` page for the important stuff at a glance
+* dedicated pages for `cpu`, `memory`, `gpu`, `disk`, `network`, and `tasks`
+* per process network and gpu usage in the task manager (network needs `nethogs`, gpu needs an amdgpu/i915/nvidia driver)
+* a `diagnostics` page that runs a few health checks (failed systemd units, journal errors, temps, swap, zombie processes) and spits out a copyable report
+* a `settings` page for theme colors and which sections even show up
+* sparklines, bars, cards, a sidebar that remembers if it was collapsed, all of it saved through `qsettings` so it doesn't forget who you are between launches
 
-## Features
+## screenshots
 
-- compact `Overview` page for the important numbers
-- dedicated pages for `CPU`, `Memory`, `GPU`, `Disk`, `Network`, and `Tasks`
-- `Diagnostics` page for a few common health checks
-- `Settings` page for theme colors and section visibility
-- saved UI preferences through `QSettings`
-- custom cards, sparklines, bars, and sidebar styling
-
-## Screenshots
-
-### Main Window
+### main window
 <img src="how it looks/2026-04-19-224810_1914x1068_scrot.png" alt="Main Window" width="600">
 
-### CPU Section
+### cpu section
 <img src="how it looks/2026-04-19-224818_1914x1074_scrot.png" alt="CPU Section" width="600">
 
-### Memory Section
+### memory section
 <img src="how it looks/2026-04-19-224829_1912x1079_scrot.png" alt="Memory Section" width="600">
 
-### Task Section
+### task section
 <img src="how it looks/2026-04-19-224907_1912x1037_scrot.png" alt="Disk Section" width="600">
 
-### Settings Section
+### settings section
 <img src="how it looks/2026-04-19-224916_1898x1027_scrot.png" alt="Network Section" width="600">
 
-## Installing
+## why it looks like this
 
-### One-liner
+most system monitors drift into one of two extremes, they either look like they escaped the 90s and feel cramped, or they throw every metric on screen at once and turn into noise. archvital tries to sit in the middle: enough detail to actually be useful, still pleasant to look at for more than ten seconds.
+
+## tech stack
+
+* `c++20` for the actual work
+* `qt6` for the ui and the worker thread that polls everything
+* plain `/proc`, `/sys`, and a couple of optional helper binaries (`nvidia-smi`, `nethogs`) instead of some heavy monitoring framework
+* `cmake` to build it
+
+## how to run it
+
+the fastest way, if you just want to see it running:
+
+```bash
+cmake -B build
+cmake --build build
+./build/archvital
+```
+
+if you already have a `build/` folder, this is usually enough:
+
+```bash
+cmake --build build
+./build/archvital
+```
+
+### actually installing it
+
+one liner, downloads the latest build, installs the binary, registers the desktop entry and icon:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/T9Tuco/archvital/main/install.sh | bash
 ```
 
-That is it. Downloads the latest build, installs the binary, registers the desktop entry and icon. Your app launcher will find it immediately after.
+the same command works for updates. if a newer version is out, the app shows `↑` next to the version number in the bottom left of the sidebar, click it and the command is right there.
 
-The same command works for updates. If a newer version is available, the app will show `↑` next to the version number in the bottom left of the sidebar — click it and the command is right there.
-
-### From AUR (Arch Linux)
-
-Two packages are available depending on what you want:
+on arch, there's aur packages instead:
 
 ```bash
 yay -S archvital      # stable release
 yay -S archvital-git  # latest commit
 ```
 
-Both install the binary, the desktop entry, and the icon. The stable one tracks tagged releases. The git one builds from whatever is currently on `main`.
+both install the binary, desktop entry, and icon. stable tracks tagged releases, git builds whatever is currently on `main`.
 
-### Build and Install Manually
+or build and install it yourself:
 
 ```bash
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
@@ -74,9 +96,9 @@ cmake --build build --parallel
 sudo cmake --install build
 ```
 
-## Uninstalling
+### uninstalling
 
-If you installed via the one-liner or manually:
+if you went the one liner or manual route:
 
 ```bash
 sudo rm /usr/local/bin/archvital
@@ -84,7 +106,7 @@ sudo rm /usr/share/applications/archvital.desktop
 sudo rm /usr/share/pixmaps/archvital.svg
 ```
 
-If you installed via AUR:
+if you went through aur:
 
 ```bash
 yay -R archvital
@@ -92,68 +114,59 @@ yay -R archvital
 yay -R archvital-git
 ```
 
-## Quick Start
+## requirements
 
-If you just want to build and run without installing anything:
+you'll mainly need:
 
-```bash
-cmake -S . -B build
-cmake --build build
-./build/archvital
-```
+* linux
+* `qt6`
+* `cmake`
+* a c++ compiler with `c++20` support
 
-If you already have a `build/` directory, this is usually enough:
+on arch that's roughly:
 
-```bash
-cmake --build build
-./build/archvital
-```
+* `qt6-base`
+* `cmake`
+* `gcc` or `clang`
 
-## Requirements
+optional, for extra task manager columns:
 
-You will mainly need:
+* `nethogs`, for per process network usage (needs packet capture rights, usually fine without root since the package ships the right capabilities)
 
-- Linux
-- `Qt6`
-- `cmake`
-- a C++ compiler with `C++20` support
+## what's in here
 
-Package names depend on your distro. On Arch Linux, you will usually want something along the lines of:
+* [`src/core`](./src/core) handles system data collection and the shared data structs
+* [`src/sections`](./src/sections) has the actual app pages
+* [`src/ui`](./src/ui) has reusable bits like the sidebar, cards, sparklines, and bars
+* [`src/mainwindow.cpp`](./src/mainwindow.cpp) wires it all together
 
-- `qt6-base`
-- `cmake`
-- `gcc` or `clang`
+## settings and persistence
 
-## What Is In Here
+archvital remembers a few things so it feels like a normal desktop app instead of a goldfish:
 
-- [`src/core`](./src/core) handles system data collection and shared data structs
-- [`src/sections`](./src/sections) contains the main app pages
-- [`src/ui`](./src/ui) contains reusable UI components like the sidebar, cards, sparklines, and bars
-- [`src/mainwindow.cpp`](./src/mainwindow.cpp) wires the app together
+* window geometry
+* collapsed sidebar state
+* last opened section
+* selected theme colors
+* which sections are shown or hidden
 
-## Settings And Persistence
+all through `qsettings`.
 
-`archvital` stores a few things so it feels like a normal desktop app instead of a goldfish:
+## current status
 
-- window geometry
-- collapsed sidebar state
-- last opened section
-- selected theme colors
-- which sections should be shown or hidden
+it's usable and feels pretty solid day to day, but still actively evolving. if you spot rough edges, weird readings, or ui stuff that feels off, that's useful feedback, not nitpicking.
 
-This is handled with `QSettings`.
+## contributing
 
-## Current Status
-
-The project is already usable and feels pretty solid, but it is still actively evolving. If you spot rough edges, odd readings, or UI stuff that feels off, that is valuable feedback, not nitpicking.
-
-## Contributing
-
-If you want to improve something:
+sure, if something's broken or missing:
 
 1. clone the repo
-2. create a branch
-3. build and test your changes
+2. make a branch
+3. build it, test your change
 4. open a pull request
 
-Small, focused improvements are very welcome.
+small, focused changes are the easiest to review and the easiest to merge.
+
+## license
+
+mit. do what you want.

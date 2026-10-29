@@ -25,7 +25,9 @@ private:
     QLabel*          m_availLabel{nullptr};
     QLabel*          m_buffLabel{nullptr};
     QLabel*          m_swapLabel{nullptr};
+    QLabel*          m_swapPctLabel{nullptr};
     SparklineWidget* m_graph{nullptr};
+    SparklineWidget* m_swapGraph{nullptr};
     QTableWidget*    m_procTable{nullptr};
 
 };

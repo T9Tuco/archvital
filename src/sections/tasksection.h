@@ -16,7 +16,7 @@
 class ProcessTableModel : public QAbstractTableModel {
     Q_OBJECT
 public:
-    enum Col { PID=0, Name, User, CPU, MemMB, MemPct, Status, Started, COUNT };
+    enum Col { PID=0, Name, User, CPU, MemMB, MemPct, NetIO, GpuPct, Status, Started, COUNT };
 
     explicit ProcessTableModel(QObject* parent = nullptr);
     int      rowCount(const QModelIndex& = {})    const override;

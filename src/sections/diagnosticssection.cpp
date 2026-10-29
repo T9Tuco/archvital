@@ -169,49 +169,75 @@ void DiagnosticsSection::addFinding(const DiagnosticFinding& f) {
 }
 
 void DiagnosticsSection::runDiagnostics() {
+    if (m_pendingAsyncChecks > 0) return; // a run is already in flight, don't stack another
+
     clearFindings();
     m_reportText.clear();
     m_copyBtn->setEnabled(false);
+    m_runBtn->setEnabled(false);
+    m_runTimestamp = QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss");
+    m_timestampLabel->setText("Running…");
 
-    const QString ts = QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss");
-    m_timestampLabel->setText("Last run: " + ts);
+    m_pendingAsyncChecks = 2;
+
+    // ── 1. Systemd failed units (async, must not block the ui thread) ────
+    auto* systemdProc = new QProcess(this);
+    connect(systemdProc, &QProcess::finished, this, [this, systemdProc](int, QProcess::ExitStatus) {
+        const QString out = QString::fromLocal8Bit(systemdProc->readAllStandardOutput()).trimmed();
+        if (systemdProc->exitCode() == 0 && !out.isEmpty() && !out.startsWith("0 loaded")) {
+            m_systemdFinding = {DiagnosticFinding::Severity::Error,
+                "Failed Systemd Units", out.left(400)};
+        } else {
+            m_systemdFinding = {DiagnosticFinding::Severity::OK,
+                "Systemd: All units healthy", {}};
+        }
+        systemdProc->deleteLater();
+        if (--m_pendingAsyncChecks == 0) finishDiagnostics();
+    });
+    connect(systemdProc, &QProcess::errorOccurred, this, [this, systemdProc](QProcess::ProcessError err) {
+        if (err != QProcess::FailedToStart) return; // crashed etc still emits finished()
+        m_systemdFinding = {DiagnosticFinding::Severity::OK,
+            "Systemd: All units healthy", {}};
+        systemdProc->deleteLater();
+        if (--m_pendingAsyncChecks == 0) finishDiagnostics();
+    });
+    systemdProc->start("systemctl", {"--failed", "--no-pager", "--plain"});
+
+    // ── 2. Critical journal errors (async) ──────────────────────────────────
+    auto* journalProc = new QProcess(this);
+    connect(journalProc, &QProcess::finished, this, [this, journalProc](int, QProcess::ExitStatus) {
+        const QString out = QString::fromLocal8Bit(journalProc->readAllStandardOutput()).trimmed();
+        const QStringList lines = out.split('\n', Qt::SkipEmptyParts);
+        if (lines.size() > 1) {
+            m_journalFinding = {DiagnosticFinding::Severity::Warning,
+                QString("%1 critical journal error(s) since boot").arg(lines.size() - 1),
+                lines.mid(1, 5).join('\n')};
+        } else {
+            m_journalFinding = {DiagnosticFinding::Severity::OK,
+                "Journal: No critical errors since boot", {}};
+        }
+        journalProc->deleteLater();
+        if (--m_pendingAsyncChecks == 0) finishDiagnostics();
+    });
+    connect(journalProc, &QProcess::errorOccurred, this, [this, journalProc](QProcess::ProcessError err) {
+        if (err != QProcess::FailedToStart) return;
+        m_journalFinding = {DiagnosticFinding::Severity::OK,
+            "Journal: No critical errors since boot", {}};
+        journalProc->deleteLater();
+        if (--m_pendingAsyncChecks == 0) finishDiagnostics();
+    });
+    journalProc->start("journalctl", {"-p", "2", "-b", "--no-pager", "-n", "20"});
+}
+
+void DiagnosticsSection::finishDiagnostics() {
+    m_timestampLabel->setText("Last run: " + m_runTimestamp);
     m_reportText += "Archvital Diagnostics Report\n";
-    m_reportText += "Generated: " + ts + "\n";
+    m_reportText += "Generated: " + m_runTimestamp + "\n";
     m_reportText += QString(40, '=') + "\n\n";
 
     QVector<DiagnosticFinding> findings;
-
-    // ── 1. Systemd failed units ───────────────────────────────────────────
-    {
-        QProcess p;
-        p.start("systemctl", {"--failed", "--no-pager", "--plain"});
-        p.waitForFinished(5000);
-        const QString out = QString::fromLocal8Bit(p.readAllStandardOutput()).trimmed();
-        if (p.exitCode() == 0 && !out.isEmpty() && !out.startsWith("0 loaded")) {
-            findings.append({DiagnosticFinding::Severity::Error,
-                "Failed Systemd Units", out.left(400)});
-        } else {
-            findings.append({DiagnosticFinding::Severity::OK,
-                "Systemd: All units healthy", {}});
-        }
-    }
-
-    // ── 2. Critical journal errors ────────────────────────────────────────
-    {
-        QProcess p;
-        p.start("journalctl", {"-p", "2", "-b", "--no-pager", "-n", "20"});
-        p.waitForFinished(5000);
-        const QString out = QString::fromLocal8Bit(p.readAllStandardOutput()).trimmed();
-        const QStringList lines = out.split('\n', Qt::SkipEmptyParts);
-        if (lines.size() > 1) {
-            findings.append({DiagnosticFinding::Severity::Warning,
-                QString("%1 critical journal error(s) since boot").arg(lines.size() - 1),
-                lines.mid(1, 5).join('\n')});
-        } else {
-            findings.append({DiagnosticFinding::Severity::OK,
-                "Journal: No critical errors since boot", {}});
-        }
-    }
+    findings.append(m_systemdFinding);
+    findings.append(m_journalFinding);
 
     // ── 3. CPU temperatures ───────────────────────────────────────────────
     if (m_cpuData.packageTemp > 0) {
@@ -260,11 +286,10 @@ void DiagnosticsSection::runDiagnostics() {
 
     // ── 6. Long uptime ────────────────────────────────────────────────────
     if (m_cpuData.loadAvg1 >= 0) {
-        QProcess up;
-        up.start("cat", {"/proc/uptime"});
-        up.waitForFinished(1000);
-        double uptimeSec = QString::fromLocal8Bit(up.readAllStandardOutput())
-            .split(' ').first().toDouble();
+        double uptimeSec = 0.0;
+        QFile upf("/proc/uptime");
+        if (upf.open(QIODevice::ReadOnly | QIODevice::Text))
+            uptimeSec = QString::fromLocal8Bit(upf.readAll()).split(' ').first().toDouble();
         if (uptimeSec > 30 * 86400) {
             findings.append({DiagnosticFinding::Severity::Warning,
                 QString("System uptime > 30 days (%1 days)")
@@ -307,6 +332,7 @@ void DiagnosticsSection::runDiagnostics() {
     }
 
     m_copyBtn->setEnabled(true);
+    m_runBtn->setEnabled(true);
 
     // Toast for critical findings
     int errors = 0, warnings = 0;

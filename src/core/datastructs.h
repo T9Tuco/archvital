@@ -35,7 +35,9 @@ struct MemoryData {
     long long swapTotalKB{0};
     long long swapUsedKB{0};
     double usagePercent{0.0};
+    double swapUsagePercent{0.0};
     QVector<double> usageHistory;
+    QVector<double> swapUsageHistory;
 };
 
 struct GpuData {
@@ -96,6 +98,12 @@ struct ProcessData {
     QString status;
     QString startTime;
     bool isKernelThread{false};
+    // -1 means "not available on this system" (no nethogs, no supported gpu),
+    // 0 means "available but currently idle", kept distinct so the ui can grey one out
+    long long netDownBytesPerSec{-1};
+    long long netUpBytesPerSec{-1};
+    double gpuUsagePercent{-1.0};
+    long long gpuMemBytes{-1};
 };
 
 struct SystemInfo {

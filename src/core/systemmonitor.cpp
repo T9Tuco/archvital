@@ -103,6 +103,7 @@ void SystemMonitorWorker::initialize() {
     }
     detectGpu();
     refreshIPAddresses();
+    startNethogs();
 }
 
 // quick GPU detective work
@@ -330,9 +331,14 @@ void SystemMonitorWorker::readMemoryData() {
     if (data.totalKB > 0) {
         data.usagePercent = std::clamp(100.0 * data.usedKB / data.totalKB, 0.0, 100.0);
     }
+    if (data.swapTotalKB > 0) {
+        data.swapUsagePercent = std::clamp(100.0 * data.swapUsedKB / data.swapTotalKB, 0.0, 100.0);
+    }
 
     pushHistory(m_memHistory, data.usagePercent);
     data.usageHistory = m_memHistory;
+    pushHistory(m_swapHistory, data.swapUsagePercent);
+    data.swapUsageHistory = m_swapHistory;
     emit memoryDataReady(data);
 }
 
@@ -415,6 +421,81 @@ void SystemMonitorWorker::readGpuData() {
     }
 
     emit gpuDataReady(data);
+}
+
+// gpu usage per process, using fdinfo so we don't need any extra tooling.
+// amdgpu and i915 expose drm-engine-* busy counters per open fd under
+// /proc/<pid>/fdinfo, same trick nvtop and btop use. nvidia's driver has
+// no such counter per fd, so nvidia-smi only gets us vram per process
+// there, not a usage percent.
+// only runs at all once a gpu was actually detected, so machines without
+// one pay nothing extra per poll.
+
+void SystemMonitorWorker::readProcessGpuUsage(QHash<int, double>& gpuPct,
+                                               QHash<int, long long>& gpuMemMB) {
+    if (m_gpuHwmonPath.isEmpty() && !m_gpuNvidiaSmi) return;
+
+    if (m_gpuNvidiaSmi) {
+        QProcess p;
+        p.start("nvidia-smi", {"--query-compute-apps=pid,used_memory",
+                                "--format=csv,noheader,nounits"});
+        p.waitForFinished(2000);
+        if (p.exitCode() == 0) {
+            const auto lines = QString::fromLocal8Bit(p.readAllStandardOutput())
+                .split('\n', Qt::SkipEmptyParts);
+            for (const QString& line : lines) {
+                const QStringList parts = line.split(',');
+                if (parts.size() < 2) continue;
+                bool ok = false;
+                const int pid = parts[0].trimmed().toInt(&ok);
+                if (ok) gpuMemMB[pid] = parts[1].trimmed().toLongLong();
+            }
+        }
+        return;
+    }
+
+    const long long now = monoNs();
+    const double elapsed = m_prevGpuBusyNs_time > 0 ?
+        (now - m_prevGpuBusyNs_time) / 1e9 : 0.0;
+
+    QHash<int, long long> newBusy;
+    const QDir procDir("/proc");
+    for (const QString& e : procDir.entryList(QDir::Dirs | QDir::NoDotAndDotDot)) {
+        bool ok = false;
+        const int pid = e.toInt(&ok);
+        if (!ok) continue;
+
+        const QString fdDir = "/proc/" + e + "/fd";
+        const QDir fds(fdDir);
+        long long busy = 0;
+        bool isGpuClient = false;
+        for (const QString& fd : fds.entryList(QDir::NoDotAndDotDot)) {
+            const QString target = QFile::symLinkTarget(fdDir + "/" + fd);
+            if (!target.startsWith("/dev/dri/")) continue;
+            isGpuClient = true;
+            const QString info = readFile("/proc/" + e + "/fdinfo/" + fd);
+            for (const QString& line : info.split('\n', Qt::SkipEmptyParts)) {
+                if (!line.startsWith("drm-engine-")) continue;
+                const int c = line.indexOf(':');
+                if (c < 0) continue;
+                bool nsOk = false;
+                const long long ns = line.mid(c + 1).trimmed().split(' ').first().toLongLong(&nsOk);
+                if (nsOk) busy += ns;
+            }
+        }
+        if (isGpuClient) newBusy[pid] = busy;
+    }
+
+    if (elapsed > 0) {
+        for (auto it = newBusy.constBegin(); it != newBusy.constEnd(); ++it) {
+            if (!m_prevGpuBusyNs.contains(it.key())) continue;
+            const double deltaSec = (it.value() - m_prevGpuBusyNs[it.key()]) / 1e9;
+            gpuPct[it.key()] = std::clamp(100.0 * deltaSec / elapsed, 0.0, 100.0);
+        }
+    }
+
+    m_prevGpuBusyNs = newBusy;
+    m_prevGpuBusyNs_time = now;
 }
 
 // disk usage and io stats
@@ -560,6 +641,66 @@ void SystemMonitorWorker::refreshIPAddresses() {
     }
 }
 
+// network usage per process, via an optional nethogs -t child that keeps
+// running in the background. nethogs needs packet capture rights (root, or
+// cap_net_raw/cap_net_admin on the binary), so this is just a best try:
+// if it's missing or can't start, the network columns per process just
+// stay at "unavailable" everywhere else.
+
+void SystemMonitorWorker::startNethogs() {
+    if (m_nethogsTried) return;
+    m_nethogsTried = true;
+
+    m_nethogsProc = new QProcess(this);
+    connect(m_nethogsProc, &QProcess::readyReadStandardOutput,
+            this, &SystemMonitorWorker::parseNethogsOutput);
+    connect(m_nethogsProc, &QProcess::errorOccurred, this, [this](QProcess::ProcessError) {
+        // binary missing, no permission, whatever. leave the rates per process unavailable
+        m_nethogsProc->deleteLater();
+        m_nethogsProc = nullptr;
+    });
+    // -t: tracemode (plain lines instead of ncurses), -d: refresh seconds
+    m_nethogsProc->start("nethogs", {"-t", "-d", "2"});
+}
+
+void SystemMonitorWorker::parseNethogsOutput() {
+    if (!m_nethogsProc) return;
+    m_nethogsLineBuf += QString::fromLocal8Bit(m_nethogsProc->readAllStandardOutput());
+
+    int nl;
+    while ((nl = m_nethogsLineBuf.indexOf('\n')) >= 0) {
+        const QString line = m_nethogsLineBuf.left(nl).trimmed();
+        m_nethogsLineBuf.remove(0, nl + 1);
+
+        if (line.isEmpty()) continue; // just ends the batch, nothing to parse
+
+        if (line == "Refreshing:") {
+            // a new batch is about to start, so clear now before refilling.
+            // that way pids that stopped sending actually drop out, instead
+            // of the fresh data we're about to read getting wiped right after
+            m_pidNetRatesKBps.clear();
+            continue;
+        }
+
+        // "<program path/args>/<pid>/<uid>\t<sent KB/s>\t<received KB/s>", plus
+        // an "unknown TCP/0/0" bucket for traffic nethogs can't attribute.
+        // pid 0 is never a real process, so we just skip it
+        const QStringList cols = line.split('\t');
+        if (cols.size() < 3) continue;
+        const QStringList idParts = cols[0].split('/');
+        if (idParts.size() < 2) continue;
+
+        bool pidOk = false;
+        const int pid = idParts[idParts.size() - 2].toInt(&pidOk);
+        if (!pidOk || pid <= 0) continue;
+
+        bool sentOk = false, recvOk = false;
+        const double sentKBps = cols[1].trimmed().toDouble(&sentOk);
+        const double recvKBps = cols[2].trimmed().toDouble(&recvOk);
+        if (sentOk && recvOk) m_pidNetRatesKBps[pid] = {sentKBps, recvKBps};
+    }
+}
+
 void SystemMonitorWorker::readNetworkData() {
     QFile f("/proc/net/dev");
     if (!f.open(QIODevice::ReadOnly | QIODevice::Text)) return;
@@ -640,6 +781,22 @@ void SystemMonitorWorker::readProcessData() {
     }
     const long long pageSize = sysconf(_SC_PAGESIZE);
 
+    // read once for the whole poll, there's no reason to open this again for every process
+    bool haveBoot = false;
+    QDateTime boot;
+    {
+        QFile upf("/proc/uptime");
+        if (upf.open(QIODevice::ReadOnly | QIODevice::Text)) {
+            const double upSec = QString::fromLocal8Bit(upf.readAll()).split(' ').first().toDouble();
+            boot = QDateTime::currentDateTime().addSecs(-static_cast<qint64>(upSec));
+            haveBoot = true;
+        }
+    }
+
+    QHash<int, double> gpuPct;
+    QHash<int, long long> gpuMemMB;
+    readProcessGpuUsage(gpuPct, gpuMemMB);
+
     QVector<ProcessData> result;
     QHash<int, ProcTimes> newTimes;
 
@@ -711,31 +868,6 @@ void SystemMonitorWorker::readProcessData() {
                 isKernel = cl.read(1).isEmpty();
         }
 
-        // turn process start ticks into something a human can glance at
-        {
-            QFile upf("/proc/uptime");
-            if (upf.open(QIODevice::ReadOnly | QIODevice::Text)) {
-                double upSec = QString::fromLocal8Bit(upf.readAll()).split(' ').first().toDouble();
-                QDateTime boot = QDateTime::currentDateTime().addSecs(-static_cast<qint64>(upSec));
-                double procStartSec = static_cast<double>(starttime) / m_clkTck;
-                QDateTime procStart = boot.addMSecs(static_cast<qint64>(procStartSec * 1000));
-
-                ProcessData pd;
-                pd.pid           = pidVal;
-                pd.ppid          = ppid;
-                pd.name          = procName;
-                pd.user          = user;
-                pd.cpuPercent    = cpuPct;
-                pd.memBytes      = memBytes;
-                pd.memPercent    = memPct;
-                pd.status        = state;
-                pd.startTime     = procStart.toString("hh:mm");
-                pd.isKernelThread = isKernel;
-                result.append(pd);
-                continue;
-            }
-        }
-
         ProcessData pd;
         pd.pid            = pidVal;
         pd.ppid           = ppid;
@@ -746,6 +878,25 @@ void SystemMonitorWorker::readProcessData() {
         pd.memPercent     = memPct;
         pd.status         = state;
         pd.isKernelThread = isKernel;
+
+        if (haveBoot) {
+            const double procStartSec = static_cast<double>(starttime) / m_clkTck;
+            const QDateTime procStart = boot.addMSecs(static_cast<qint64>(procStartSec * 1000));
+            pd.startTime = procStart.toString("hh:mm");
+        }
+
+        if (m_pidNetRatesKBps.contains(pidVal)) {
+            const auto& rates = m_pidNetRatesKBps[pidVal];
+            pd.netUpBytesPerSec   = static_cast<long long>(rates.first  * 1024);
+            pd.netDownBytesPerSec = static_cast<long long>(rates.second * 1024);
+        } else if (m_nethogsProc) {
+            // nethogs is running but hasn't reported this pid yet, so call it idle, not unavailable
+            pd.netUpBytesPerSec = pd.netDownBytesPerSec = 0;
+        }
+
+        if (gpuPct.contains(pidVal))    pd.gpuUsagePercent = gpuPct[pidVal];
+        if (gpuMemMB.contains(pidVal))  pd.gpuMemBytes      = gpuMemMB[pidVal] * 1024 * 1024;
+
         result.append(pd);
     }
 

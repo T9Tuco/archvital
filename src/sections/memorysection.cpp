@@ -119,6 +119,34 @@ MemorySection::MemorySection(QWidget* parent) : QWidget(parent) {
 
     vbox->addWidget(usageCard);
 
+    // swap gets its own small card, easy to miss as just one line among
+    // the ram details, but it's the number people actually come looking
+    // for once the system starts stuttering
+    auto* swapCard = new QWidget(inner);
+    swapCard->setStyleSheet(
+        "background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 10px;");
+    auto* swl = new QVBoxLayout(swapCard);
+    swl->setContentsMargins(16, 14, 16, 14);
+    swl->setSpacing(10);
+
+    auto* swapTopRow = new QHBoxLayout();
+    auto* swapTitle = new QLabel("Swap", swapCard);
+    swapTitle->setStyleSheet(
+        "color: #9e9e9e; font-size: 12px; font-weight: 600; background: transparent;");
+    swapTopRow->addWidget(swapTitle);
+    swapTopRow->addStretch();
+    m_swapPctLabel = value("—", swapCard);
+    swapTopRow->addWidget(m_swapPctLabel);
+    swl->addLayout(swapTopRow);
+
+    m_swapGraph = new SparklineWidget(swapCard);
+    m_swapGraph->setFixedHeight(48);
+    m_swapGraph->setFixedMax(100.0);
+    m_swapGraph->setColor(Style::warningColor());
+    swl->addWidget(m_swapGraph);
+
+    vbox->addWidget(swapCard);
+
     // the usual suspects that are eating memory right now
     auto* procHeader = new QLabel("Top Memory Consumers", inner);
     procHeader->setStyleSheet(
@@ -165,12 +193,17 @@ void MemorySection::onMemoryUpdated(MemoryData d) {
     m_availLabel->setText(fmtKB(d.availableKB));
     m_buffLabel->setText(fmtKB(d.buffersKB + d.cachedKB));
 
-    if (d.swapTotalKB == 0)
+    if (d.swapTotalKB == 0) {
         m_swapLabel->setText("No swap configured");
-    else
+        m_swapPctLabel->setText("—");
+    } else {
         m_swapLabel->setText(fmtKB(d.swapUsedKB) + " / " + fmtKB(d.swapTotalKB));
+        m_swapPctLabel->setText(QString::number(d.swapUsagePercent, 'f', 1) + "%  ("
+            + fmtKB(d.swapUsedKB) + " / " + fmtKB(d.swapTotalKB) + ")");
+    }
 
     m_graph->setValues(d.usageHistory);
+    m_swapGraph->setValues(d.swapUsageHistory);
 }
 
 void MemorySection::onProcessesUpdated(QVector<ProcessData> procs) {
